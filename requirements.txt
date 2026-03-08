@@ -1,7 +1,7 @@
 streamlit
-opencv-python-headless
+pytesseract
+opencv-python
 pillow
 pandas
-numpy
 openpyxl
-google-cloud-vision
+numpy
