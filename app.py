@@ -4,6 +4,7 @@ from PIL import Image
 import pandas as pd
 import re
 import os
+import numpy as np
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
@@ -16,9 +17,11 @@ reader = easyocr.Reader(['en'], gpu=False)
 
 
 # -------- OCR FUNCTION --------
-def extract_text(image):
+ def extract_text(image):
 
-    result = reader.readtext(image, detail=0)
+    image_np = np.array(image)
+
+    result = reader.readtext(image_np, detail=0)
 
     text = " ".join(result)
 
@@ -168,3 +171,4 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet")
+
