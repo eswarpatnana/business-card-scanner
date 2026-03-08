@@ -5,8 +5,11 @@ import pandas as pd
 import numpy as np
 import re
 import os
+import cv2
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
+
+file = "scanned_cards.xlsx"
 
 # Sidebar Menu
 menu = st.sidebar.selectbox(
@@ -14,9 +17,7 @@ menu = st.sidebar.selectbox(
     ["Scan Card", "View Contacts"]
 )
 
-file = "scanned_cards.xlsx"
-
-# -------------------- SCAN CARD --------------------
+# ---------------- SCAN CARD ----------------
 
 if menu == "Scan Card":
 
@@ -43,9 +44,25 @@ if menu == "Scan Card":
 
         st.image(image, caption="Business Card", use_column_width=True)
 
+        # Convert image for OpenCV
+        img = np.array(image)
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Improve contrast
+        gray = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            11,
+            2
+        )
+
         reader = easyocr.Reader(['en'])
 
-        result = reader.readtext(np.array(image), detail=0)
+        result = reader.readtext(gray, detail=0)
 
         text = " ".join(result)
 
@@ -53,22 +70,22 @@ if menu == "Scan Card":
         st.write(text)
 
         # Extract Email
-        email = re.findall(r'\S+@\S+', text)
+        email = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
 
         # Extract Phone
-        phone = re.findall(r'\+?\d[\d\s-]{8,}\d', text)
+        phone = re.findall(r"\+?\d[\d\s\-]{7,15}", text)
 
         # Extract Website
-        website = re.findall(r'(www\.\S+)', text)
+        website = re.findall(r"(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}", text)
 
-        # Detect Name (First line usually)
+        # Guess Name
         name = ""
         for line in result:
-            if not re.search(r'\d', line):
+            if not re.search(r'\d', line) and len(line.split()) <= 3:
                 name = line
                 break
 
-        # Detect Occupation
+        # Guess Occupation
         occupation = ""
         if len(result) > 1:
             occupation = result[1]
@@ -93,11 +110,11 @@ if menu == "Scan Card":
 
         if os.path.exists(file):
 
-            old = pd.read_excel(file)
+            old_df = pd.read_excel(file)
 
-            new = pd.concat([old, df], ignore_index=True)
+            new_df = pd.concat([old_df, df], ignore_index=True)
 
-            new.to_excel(file, index=False)
+            new_df.to_excel(file, index=False)
 
         else:
 
@@ -105,7 +122,7 @@ if menu == "Scan Card":
 
         st.success("Details saved to Excel!")
 
-# -------------------- VIEW CONTACTS --------------------
+# ---------------- VIEW CONTACTS ----------------
 
 if menu == "View Contacts":
 
@@ -113,9 +130,9 @@ if menu == "View Contacts":
 
     if os.path.exists(file):
 
-        df = pd.read_excel(file)
+        saved_df = pd.read_excel(file)
 
-        st.dataframe(df)
+        st.dataframe(saved_df)
 
     else:
 
