@@ -60,60 +60,38 @@ if menu == "Scan Card":
 
         text = " ".join(result)
 
+        # Fix common OCR mistakes
+        text = text.replace(" com", ".com")
+        text = text.replace(" .com", ".com")
+        text = text.replace("WWW", "www")
+        text = text.replace(";", ".")
+
         st.subheader("Detected Text")
         st.write(text)
 
-        # ---------- Extract Email ----------
-        # ---------- Fix common OCR mistakes ----------
-# Fix common OCR mistakes
-text = text.replace(" com", ".com")
-text = text.replace(" .com", ".com")
-text = text.replace("WWW", "www")
-text = text.replace(";", ".")
+        # -------- Extract Email --------
+        email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+        email = email_match.group() if email_match else ""
 
-
-# ---------- Extract Email ----------
-email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\s*\.?\s*[A-Za-z]{2,}", text)
-
-email = ""
-if email_match:
-    email = email_match.group().replace(" ", "")
-    if "@emailcom" in email:
-        email = email.replace("emailcom", "email.com")
-
-# ---------- Extract Website ----------
-website_match = re.search(r"(www\.?[A-Za-z0-9.-]+\s*\.?\s*[A-Za-z]{2,})", text)
-
-website = ""
-if website_match:
-    website = website_match.group().replace(" ", "")
-    if not website.startswith("www."):
-        website = "www." + website.replace("www", "")
-        # ---------- Extract Phone ----------
+        # -------- Extract Phone --------
         phone_match = re.search(r"\+?\d[\d\-\.\s]{7,}\d", text)
         phone = phone_match.group() if phone_match else ""
 
-        # ---------- Extract Website ----------
+        # -------- Extract Website --------
         website_match = re.search(r"(www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,})", text)
         website = website_match.group() if website_match else ""
 
-        # ---------- Clean text ----------
-        clean_text = text
-
-        for item in [email, phone, website]:
-            clean_text = clean_text.replace(item, "")
-
-        words = clean_text.split()
-
-        # ---------- Detect Name ----------
+        # -------- Detect Name --------
         name = ""
+        words = text.split()
+
         for i in range(len(words)-1):
             if words[i].isalpha() and words[i+1].isalpha():
                 if words[i][0].isupper() and words[i+1][0].isupper():
                     name = words[i] + " " + words[i+1]
                     break
 
-        # ---------- Detect Occupation ----------
+        # -------- Detect Occupation --------
         occupation_keywords = [
             "manager","consultant","engineer","developer",
             "designer","director","founder","marketing",
@@ -176,5 +154,3 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet.")
-
-
