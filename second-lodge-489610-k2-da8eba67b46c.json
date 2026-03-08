@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "second-lodge-489610-k2",
+  "private_key_id": "da8eba67b46cbea94d0acd541cbc1408edae94f8",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCcb3/LLH8AuJIl\nilzj7b4kec8scpXPmWOoYYFtqsLyMBWWILCA/csVDINKj3ZZr5vvXZu8/0SFC00Z\nrH+twATNe8m4EcktI2FptD4ZcLHC1oaMWCfpqyMN13wJgVxQPtPrwvTof7FA9r46\nr4qyuBmBDQ90naruIjCNMNUwp8OMnwv2REoT/MMpIJa+AJEA8PaszMIu1eIFVQ4u\nY5qX/DJxSJVipALFylsrJwjuDcJZyLqUWlazaQmiQIMHi5tkL5rk3K36c2m7ZVrj\nPXBj9vha/Ww95Fz2CWSwG7kH2q/U0b6oE03JlspgF59cuYDIoTDhFNzIsCKNCkHl\nCGpuNz2VAgMBAAECggEAAJ7TlawdQSo6OtJikxfXXssp4RiqPfAd4aYorn/pyoPv\neKXetVWXAi7HcDADTZCWpdDL+ZL/Q/zQZzc/LA1R0jkjtWptTxPFGDd6CJKhGISj\nyiIztFJKBGJz+uYBBk4de+GieYU/dXe/t46zK4lzNnG6u4vAM2C+Kw0ux0TfD8DJ\nzj7iXVCPp6vbhJv3ugT0bz2q2R1uTe2I6MgUKEbmzCkBJcQX4f3Xm1IPvXtvoleY\neLIIgTrFHRyoHCXESOf2rDsHdazGuQJh0ge+owrIH2UELxnh2IA0+AYW38ddrJ82\ncNnSb84o7cYG4rosm+f0TlZl/iYbBMQWL3Wma+ne0QKBgQDN77f4OXWpiuPL856e\nX9/Fr938lvFYBoXrBelo1/o8zJM3Et4BBY4LtZbskyQp4wv9hk0q4FBrrr6hXaRg\nEwBemdCmg7QIg8iIvhPLrlNUmI3/3W575Eqz74/VagSDZBt+Xz2W7lUNZv5TWgsE\nMePFdXoEZZWAyvqdgoJFxcRnkQKBgQDCdyK91gEt6JZmCDN9RV814lI+izlnlG5I\nMRt0dQNIEhETBrvDx+S4B6jWoNVKN0+tQW1qReX3HycMnnOmqySm4ocKTLzaqDOu\n2yWJ/4HTWuFvDUArtgMsTERrAqM/55bq8X3arljmUtpuzqrfVMTtD84QkFBkU5Ak\nN1ldJZNbxQKBgQCM4nmmXJDtazJKXiFe0dJB6P3iBtWXVecaERJMgq0UGRSBseul\nIUq7IgDdWhB8g3K5f76dHZaHBKYvuONyQq2XCn2e3S02QgnX2smqJ1mk3zUOHUuv\ngE/G55Yr93qc9MiGXNvCvMv8/j/xgAFXXlYnySWviluMH9DyHs3Gs/SYsQKBgB/W\ntZ9zLFpB3G30Jcn6063U0jZfQRTOXof/Ukls5w6jtpvw3EkfrzjaODB7wLAYAjmR\nnsJpk080kIYmYzUEjEmuiQGMstbx9xRH2QuRA8aA+Kvf9YOyly5nhkQm+Gd8GV96\nDmsBZJjBM/Y0bBGIpX1SuyBHIIJslAr57O2tO0UpAoGALB/G7oWq6gpdqratm+Qc\nVKMn1j54Z1iCFZJ+w7/kLxkA/FGzrQvZCsMPx1hK0vpqnd5bxV6VUnjPq8E/E5qz\nvOCy4kX+xmOuTme+bsIBDS1I5jiILOH2ZcYw7FQWyRQh0gBoADIs+d1lqxHdXkbQ\n8/jq8Y+HXjOyLoZSHYQ6Lc8=\n-----END PRIVATE KEY-----\n",
+  "client_email": "vision-scanner@second-lodge-489610-k2.iam.gserviceaccount.com",
+  "client_id": "117831389334252738695",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/vision-scanner%40second-lodge-489610-k2.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
