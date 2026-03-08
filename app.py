@@ -182,7 +182,3 @@ if menu == "View Contacts":
         data = pd.read_excel(EXCEL_FILE)
 
         st.dataframe(data)
-
-    else:
-
-        st.warning("No contacts saved yet.")
