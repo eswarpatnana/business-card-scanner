@@ -1,7 +1,7 @@
 streamlit
 pytesseract
-opencv-python
+opencv-python-headless
 pillow
 pandas
 openpyxl
-numpy
+numpy 
