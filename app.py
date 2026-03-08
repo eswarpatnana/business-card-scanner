@@ -65,11 +65,12 @@ if menu == "Scan Card":
 
         # ---------- Extract Email ----------
         # ---------- Fix common OCR mistakes ----------
+# Fix common OCR mistakes
 text = text.replace(" com", ".com")
 text = text.replace(" .com", ".com")
-text = text.replace(" www", " www.")
 text = text.replace("WWW", "www")
 text = text.replace(";", ".")
+
 
 # ---------- Extract Email ----------
 email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\s*\.?\s*[A-Za-z]{2,}", text)
@@ -175,4 +176,5 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet.")
+
 
