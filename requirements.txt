@@ -1,7 +1,7 @@
 streamlit
 easyocr
+opencv-python-headless
 Pillow
 pandas
-opencv-python
 numpy
 openpyxl
