@@ -9,10 +9,12 @@ import cv2
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-file = "scanned_cards.xlsx"
+EXCEL_FILE = "scanned_cards.xlsx"
 
+# Sidebar menu
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
+# Load OCR model
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(['en'], gpu=False)
@@ -30,24 +32,27 @@ if menu == "Scan Card":
     image = None
 
     if option == "Upload Image":
-        uploaded = st.file_uploader("Upload Business Card", type=["jpg","png","jpeg"])
+        uploaded = st.file_uploader("Upload Business Card", type=["jpg", "png", "jpeg"])
         if uploaded:
             image = Image.open(uploaded)
 
     if option == "Use Camera":
-        camera_image = st.camera_input("Take a photo")
-        if camera_image:
-            image = Image.open(camera_image)
+        camera = st.camera_input("Take a photo of the business card")
+        if camera:
+            image = Image.open(camera)
 
     if image is not None:
 
         st.image(image, caption="Business Card", use_column_width=True)
 
+        # Convert image for OpenCV
         img = np.array(image)
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        gray = cv2.adaptiveThreshold(
+        gray = cv2.GaussianBlur(gray, (5,5), 0)
+
+        thresh = cv2.adaptiveThreshold(
             gray,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -56,7 +61,8 @@ if menu == "Scan Card":
             2
         )
 
-        result = reader.readtext(gray, detail=0)
+        # OCR detection
+        result = reader.readtext(thresh, detail=0)
 
         text = " ".join(result)
 
@@ -65,23 +71,30 @@ if menu == "Scan Card":
         text = text.replace(" .com", ".com")
         text = text.replace("WWW", "www")
         text = text.replace(";", ".")
+        text = text.replace(" www", " www.")
 
         st.subheader("Detected Text")
         st.write(text)
 
-        # -------- Extract Email --------
-        email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+        # -------- EMAIL DETECTION --------
+        email_pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+        email_match = re.search(email_pattern, text)
+
         email = email_match.group() if email_match else ""
 
-        # -------- Extract Phone --------
-        phone_match = re.search(r"\+?\d[\d\-\.\s]{7,}\d", text)
+        # -------- PHONE DETECTION --------
+        phone_pattern = r"\+?\d[\d\-\.\s]{7,}\d"
+        phone_match = re.search(phone_pattern, text)
+
         phone = phone_match.group() if phone_match else ""
 
-        # -------- Extract Website --------
-        website_match = re.search(r"(www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,})", text)
+        # -------- WEBSITE DETECTION --------
+        website_pattern = r"(www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z0-9.-]+\.com)"
+        website_match = re.search(website_pattern, text)
+
         website = website_match.group() if website_match else ""
 
-        # -------- Detect Name --------
+        # -------- NAME DETECTION --------
         name = ""
         words = text.split()
 
@@ -91,7 +104,7 @@ if menu == "Scan Card":
                     name = words[i] + " " + words[i+1]
                     break
 
-        # -------- Detect Occupation --------
+        # -------- OCCUPATION DETECTION --------
         occupation_keywords = [
             "manager","consultant","engineer","developer",
             "designer","director","founder","marketing",
@@ -101,11 +114,13 @@ if menu == "Scan Card":
         occupation = ""
 
         for line in result:
-            lower = line.lower()
-            for key in occupation_keywords:
-                if key in lower:
+            line_lower = line.lower()
+            for keyword in occupation_keywords:
+                if keyword in line_lower:
                     occupation = line
                     break
+
+        # -------- DISPLAY RESULTS --------
 
         st.subheader("Detected Details")
 
@@ -115,6 +130,7 @@ if menu == "Scan Card":
         st.write("📞 Phone:", phone)
         st.write("🌐 Website:", website)
 
+        # Save to Excel
         data = {
             "Name":[name],
             "Occupation":[occupation],
@@ -125,17 +141,17 @@ if menu == "Scan Card":
 
         df = pd.DataFrame(data)
 
-        if os.path.exists(file):
+        if os.path.exists(EXCEL_FILE):
 
-            old_df = pd.read_excel(file)
+            old = pd.read_excel(EXCEL_FILE)
 
-            new_df = pd.concat([old_df, df], ignore_index=True)
+            new = pd.concat([old, df], ignore_index=True)
 
-            new_df.to_excel(file, index=False)
+            new.to_excel(EXCEL_FILE, index=False)
 
         else:
 
-            df.to_excel(file, index=False)
+            df.to_excel(EXCEL_FILE, index=False)
 
         st.success("Details saved to Excel!")
 
@@ -145,11 +161,11 @@ if menu == "View Contacts":
 
     st.title("📂 Saved Contacts")
 
-    if os.path.exists(file):
+    if os.path.exists(EXCEL_FILE):
 
-        saved_df = pd.read_excel(file)
+        data = pd.read_excel(EXCEL_FILE)
 
-        st.dataframe(saved_df)
+        st.dataframe(data)
 
     else:
 
