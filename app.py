@@ -64,9 +64,30 @@ if menu == "Scan Card":
         st.write(text)
 
         # ---------- Extract Email ----------
-        email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
-        email = email_match.group() if email_match else ""
+        # ---------- Fix common OCR mistakes ----------
+text = text.replace(" com", ".com")
+text = text.replace(" .com", ".com")
+text = text.replace(" www", " www.")
+text = text.replace("WWW", "www")
+text = text.replace(";", ".")
 
+# ---------- Extract Email ----------
+email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\s*\.?\s*[A-Za-z]{2,}", text)
+
+email = ""
+if email_match:
+    email = email_match.group().replace(" ", "")
+    if "@emailcom" in email:
+        email = email.replace("emailcom", "email.com")
+
+# ---------- Extract Website ----------
+website_match = re.search(r"(www\.?[A-Za-z0-9.-]+\s*\.?\s*[A-Za-z]{2,})", text)
+
+website = ""
+if website_match:
+    website = website_match.group().replace(" ", "")
+    if not website.startswith("www."):
+        website = "www." + website.replace("www", "")
         # ---------- Extract Phone ----------
         phone_match = re.search(r"\+?\d[\d\-\.\s]{7,}\d", text)
         phone = phone_match.group() if phone_match else ""
@@ -154,3 +175,4 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet.")
+
