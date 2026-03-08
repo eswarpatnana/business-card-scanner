@@ -61,59 +61,38 @@ if menu == "Scan Card":
 
         text = " ".join(result)
 
-        # -------- OCR FIXES (VERY IMPORTANT) --------
-
-        text = text.replace(" com", ".com")
-        text = text.replace(" .com", ".com")
-
-        # Fix common email mistakes
+        # -------- FIX COMMON OCR MISTAKES --------
+        text = text.replace("emaiicom", "email.com")
         text = text.replace("emailcom", "email.com")
-
-        # Fix common website mistakes
-        text = text.replace("designscom", "designs.com")
-        text = text.replace("wmichael", "www.michael")
-
-        # Fix uppercase issues
-        text = text.replace("WWW", "www")
-
-        # Remove OCR punctuation issues
-        text = text.replace(";", ".")
+        text = text.replace("ww", "www.")
+        text = text.replace("www..", "www.")
+        text = text.replace("com ", ".com ")
 
         st.subheader("Detected Text")
         st.write(text)
 
         # -------- EMAIL DETECTION --------
-
         email = ""
-        email_pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
-
-        email_match = re.search(email_pattern, text)
+        email_match = re.search(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
 
         if email_match:
             email = email_match.group()
 
         # -------- PHONE DETECTION --------
-
         phone = ""
-        phone_pattern = r"\+?\d[\d\-\.\s]{7,}\d"
-
-        phone_match = re.search(phone_pattern, text)
+        phone_match = re.search(r'\+?\d[\d\s\-]{8,}', text)
 
         if phone_match:
             phone = phone_match.group()
 
         # -------- WEBSITE DETECTION --------
-
         website = ""
-        website_pattern = r"(www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z0-9.-]+\.com)"
-
-        website_match = re.search(website_pattern, text)
+        website_match = re.search(r'www\.[A-Za-z0-9\-]+\.[A-Za-z]{2,}', text)
 
         if website_match:
             website = website_match.group()
 
         # -------- NAME DETECTION --------
-
         name = ""
         words = text.split()
 
@@ -124,9 +103,7 @@ if menu == "Scan Card":
                     break
 
         # -------- OCCUPATION DETECTION --------
-
         occupation = ""
-
         keywords = [
             "manager","consultant","engineer","developer",
             "designer","director","founder","marketing",
@@ -158,15 +135,10 @@ if menu == "Scan Card":
         df = pd.DataFrame(data)
 
         if os.path.exists(EXCEL_FILE):
-
             old = pd.read_excel(EXCEL_FILE)
-
             new = pd.concat([old, df], ignore_index=True)
-
             new.to_excel(EXCEL_FILE, index=False)
-
         else:
-
             df.to_excel(EXCEL_FILE, index=False)
 
         st.success("Details saved to Excel!")
@@ -178,7 +150,7 @@ if menu == "View Contacts":
     st.title("📂 Saved Contacts")
 
     if os.path.exists(EXCEL_FILE):
-
         data = pd.read_excel(EXCEL_FILE)
-
         st.dataframe(data)
+    else:
+        st.warning("No contacts saved yet.")
