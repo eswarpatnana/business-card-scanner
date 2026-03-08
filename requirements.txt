@@ -1,6 +1,6 @@
-streamlit
-pytesseract
-pillow
-pandas
-openpyxl
-numpy
+import streamlit as st
+import pytesseract
+from PIL import Image
+import pandas as pd
+import re
+import os
