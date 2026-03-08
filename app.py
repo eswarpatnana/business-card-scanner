@@ -12,12 +12,12 @@ file = "contacts.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
-# Initialize OCR reader
+# Initialize OCR
 reader = easyocr.Reader(['en'], gpu=False)
 
 
 # -------- OCR FUNCTION --------
- def extract_text(image):
+def extract_text(image):
 
     image_np = np.array(image)
 
@@ -171,4 +171,3 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet")
-
