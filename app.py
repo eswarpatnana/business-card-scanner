@@ -1,168 +1,89 @@
 import streamlit as st
+import easyocr
 from PIL import Image
-import pytesseract
 import pandas as pd
+import numpy as np
 import re
 import os
 
-# Mobile friendly layout
-st.set_page_config(
-    page_title="AI Business Card Scanner",
-    page_icon="📇",
-    layout="centered"
-)
+st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
 st.title("📇 AI Business Card Scanner")
 
-st.write(
-"Scan business cards using your camera or upload an image to automatically extract contact details."
-)
+# Upload Image
+uploaded_image = st.file_uploader("Upload Business Card", type=["png","jpg","jpeg"])
 
-menu = st.sidebar.radio("Navigation", ["Scan Card", "View Contacts"])
+if uploaded_image is not None:
 
+    image = Image.open(uploaded_image)
 
-# =========================
-# SCAN CARD PAGE
-# =========================
+    st.image(image, caption="Uploaded Business Card", use_column_width=True)
 
-if menu == "Scan Card":
+    # OCR Reader
+    reader = easyocr.Reader(['en'])
 
-    st.header("Scan Business Card")
+    result = reader.readtext(np.array(image), detail=0)
 
-    camera_photo = st.camera_input("📷 Scan with Camera")
+    text = " ".join(result)
 
-    uploaded_file = st.file_uploader(
-        "📂 Upload Business Card Image",
-        type=["png","jpg","jpeg"]
-    )
+    st.subheader("Detected Text")
+    st.write(text)
 
-    image = None
+    # Extract Email
+    email = re.findall(r'\S+@\S+', text)
 
-    if camera_photo is not None:
-        image = Image.open(camera_photo)
+    # Extract Phone
+    phone = re.findall(r'\+?\d[\d\s-]{8,}\d', text)
 
-    elif uploaded_file is not None:
-        image = Image.open(uploaded_file)
+    # Extract Website
+    website = re.findall(r'(www\.\S+)', text)
 
-    if image is not None:
+    # Name guess (first line)
+    name = result[0] if len(result) > 0 else ""
 
-        st.image(image, caption="Captured Card", use_column_width=True)
+    # Occupation guess (second line)
+    occupation = result[1] if len(result) > 1 else ""
 
-        text = pytesseract.image_to_string(image)
+    st.subheader("Detected Details")
 
-        st.subheader("Extracted Text")
-        st.write(text)
+    st.write("👤 Name:", name)
+    st.write("💼 Occupation:", occupation)
+    st.write("📧 Email:", email[0] if email else "")
+    st.write("📞 Phone:", phone[0] if phone else "")
+    st.write("🌐 Website:", website[0] if website else "")
 
-        # Detect email
-        email = re.findall(r'\S+@\S+', text)
+    data = {
+        "Name":[name],
+        "Occupation":[occupation],
+        "Email":[email[0] if email else ""],
+        "Phone":[phone[0] if phone else ""],
+        "Website":[website[0] if website else ""]
+    }
 
-        # Detect phone
-        phone = re.findall(r'\+?\d[\d -]{8,12}\d', text)
+    df = pd.DataFrame(data)
 
-        # Detect website
-        website = re.findall(r'www\.\S+', text)
+    file = "scanned_cards.xlsx"
 
-        lines = text.split("\n")
+    if os.path.exists(file):
 
-        name = ""
-        occupation = ""
+        old_df = pd.read_excel(file)
 
-        for line in lines:
+        new_df = pd.concat([old_df, df], ignore_index=True)
 
-            if len(line.split()) == 2 and name == "":
-                name = line
-
-            if (
-                "manager" in line.lower()
-                or "consultant" in line.lower()
-                or "designer" in line.lower()
-                or "developer" in line.lower()
-                or "engineer" in line.lower()
-                or "sales" in line.lower()
-            ):
-                occupation = line
-
-        st.markdown("### Contact Details")
-
-        st.info(f"""
-👤 Name: {name}
-
-💼 Occupation: {occupation}
-
-📧 Email: {email[0] if email else ""}
-
-📞 Phone: {phone[0] if phone else ""}
-
-🌐 Website: {website[0] if website else ""}
-""")
-
-        new_data = pd.DataFrame([{
-            "Name": name,
-            "Occupation": occupation,
-            "Email": email[0] if email else "",
-            "Phone": phone[0] if phone else "",
-            "Website": website[0] if website else ""
-        }])
-
-        if os.path.exists("scanned_cards.xlsx"):
-
-            saved_df = pd.read_excel("scanned_cards.xlsx")
-
-            saved_df = pd.concat([saved_df, new_data], ignore_index=True)
-
-            saved_df = saved_df.drop_duplicates(subset=["Email"], keep="first")
-
-        else:
-
-            saved_df = new_data
-
-        saved_df.to_excel("scanned_cards.xlsx", index=False)
-
-        st.success("Contact saved successfully!")
-
-
-# =========================
-# VIEW CONTACTS PAGE
-# =========================
-
-if menu == "View Contacts":
-
-    if os.path.exists("scanned_cards.xlsx"):
-
-        saved_df = pd.read_excel("scanned_cards.xlsx")
-
-        st.subheader("Saved Contacts Database")
-
-        st.write("Total Contacts:", len(saved_df))
-
-        search = st.text_input("Search Contact")
-
-        if search:
-
-            filtered_df = saved_df[
-                saved_df.apply(lambda row: search.lower() in str(row).lower(), axis=1)
-            ]
-
-            st.dataframe(filtered_df)
-
-        else:
-
-            st.dataframe(saved_df)
-
-        with open("scanned_cards.xlsx","rb") as file:
-
-            st.download_button(
-                "Download Contacts Excel",
-                file,
-                "contacts_database.xlsx"
-            )
-
-        if st.button("Clear Database"):
-
-            os.remove("scanned_cards.xlsx")
-
-            st.success("Database cleared!")
+        new_df.to_excel(file, index=False)
 
     else:
 
-        st.warning("No contacts saved yet.")
+        df.to_excel(file, index=False)
+
+    st.success("Details saved to Excel!")
+
+# Show database
+
+if os.path.exists("scanned_cards.xlsx"):
+
+    st.subheader("Saved Contacts Database")
+
+    saved_df = pd.read_excel("scanned_cards.xlsx")
+
+    st.dataframe(saved_df)
