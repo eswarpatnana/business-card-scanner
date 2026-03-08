@@ -1,11 +1,9 @@
 import streamlit as st
-import pytesseract
+import easyocr
 from PIL import Image
 import pandas as pd
 import re
 import os
-import numpy as np
-import cv2
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
@@ -13,21 +11,16 @@ file = "contacts.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
+# Initialize OCR reader
+reader = easyocr.Reader(['en'], gpu=False)
+
+
 # -------- OCR FUNCTION --------
 def extract_text(image):
 
-    img = np.array(image)
+    result = reader.readtext(image, detail=0)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    gray = cv2.adaptiveThreshold(
-        gray,255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11,2
-    )
-
-    text = pytesseract.image_to_string(gray)
+    text = " ".join(result)
 
     return text
 
@@ -35,7 +28,7 @@ def extract_text(image):
 # -------- EMAIL --------
 def extract_email(text):
 
-    email = re.findall(r'\S+@\S+', text)
+    email = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
 
     return email[0] if email else ""
 
@@ -59,9 +52,12 @@ def extract_website(text):
 # -------- NAME --------
 def extract_name(text):
 
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    words = text.split()
 
-    return lines[0] if len(lines) > 0 else ""
+    if len(words) >= 2:
+        return words[0] + " " + words[1]
+
+    return ""
 
 
 # -------- OCCUPATION --------
@@ -73,13 +69,13 @@ def extract_occupation(text):
         "sales","ceo","analyst"
     ]
 
-    for line in text.split("\n"):
+    for word in text.split():
 
         for key in keywords:
 
-            if key in line.lower():
+            if key in word.lower():
 
-                return line
+                return word
 
     return ""
 
