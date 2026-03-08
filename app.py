@@ -61,15 +61,15 @@ if menu == "Scan Card":
 
         text = " ".join(result)
         # ---------- CLEAN OCR TEXT ----------
-text = text.replace("..", ".")
-text = text.replace(" .", ".")
-text = text.replace("@email..com", "@email.com")
-text = text.replace("email..com", "email.com")
+        text = text.replace("..", ".")
+        text = text.replace(" .", ".")
+        text = text.replace("@email..com", "@email.com")
+        text = text.replace("email..com", "email.com")
 
-# Fix website mistakes
-text = text.replace("wmichael", "www.michael")
-text = text.replace("wethan", "www.ethan")
-text = text.replace(" w", " www.")
+       # Fix website mistakes
+       text = text.replace("wmichael", "www.michael")
+       text = text.replace("wethan", "www.ethan")
+       text = text.replace(" w", " www.")
         
 
         # -------- FIX COMMON OCR MISTAKES --------
@@ -165,4 +165,5 @@ if menu == "View Contacts":
         st.dataframe(data)
     else:
         st.warning("No contacts saved yet.")
+
 
