@@ -8,82 +8,115 @@ import os
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-st.title("📇 AI Business Card Scanner")
+# Sidebar Menu
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Scan Card", "View Contacts"]
+)
 
-# Upload Image
-uploaded_image = st.file_uploader("Upload Business Card", type=["png","jpg","jpeg"])
+file = "scanned_cards.xlsx"
 
-if uploaded_image is not None:
+# -------------------- SCAN CARD --------------------
 
-    image = Image.open(uploaded_image)
+if menu == "Scan Card":
 
-    st.image(image, caption="Uploaded Business Card", use_column_width=True)
+    st.title("📇 AI Business Card Scanner")
 
-    # OCR Reader
-    reader = easyocr.Reader(['en'])
+    option = st.radio(
+        "Choose Input Method",
+        ["Upload Image", "Use Camera"]
+    )
 
-    result = reader.readtext(np.array(image), detail=0)
+    image = None
 
-    text = " ".join(result)
+    if option == "Upload Image":
+        uploaded = st.file_uploader("Upload Business Card", type=["jpg","png","jpeg"])
+        if uploaded:
+            image = Image.open(uploaded)
 
-    st.subheader("Detected Text")
-    st.write(text)
+    if option == "Use Camera":
+        camera_image = st.camera_input("Take a photo")
+        if camera_image:
+            image = Image.open(camera_image)
 
-    # Extract Email
-    email = re.findall(r'\S+@\S+', text)
+    if image is not None:
 
-    # Extract Phone
-    phone = re.findall(r'\+?\d[\d\s-]{8,}\d', text)
+        st.image(image, caption="Business Card", use_column_width=True)
 
-    # Extract Website
-    website = re.findall(r'(www\.\S+)', text)
+        reader = easyocr.Reader(['en'])
 
-    # Name guess (first line)
-    name = result[0] if len(result) > 0 else ""
+        result = reader.readtext(np.array(image), detail=0)
 
-    # Occupation guess (second line)
-    occupation = result[1] if len(result) > 1 else ""
+        text = " ".join(result)
 
-    st.subheader("Detected Details")
+        st.subheader("Detected Text")
+        st.write(text)
 
-    st.write("👤 Name:", name)
-    st.write("💼 Occupation:", occupation)
-    st.write("📧 Email:", email[0] if email else "")
-    st.write("📞 Phone:", phone[0] if phone else "")
-    st.write("🌐 Website:", website[0] if website else "")
+        # Extract Email
+        email = re.findall(r'\S+@\S+', text)
 
-    data = {
-        "Name":[name],
-        "Occupation":[occupation],
-        "Email":[email[0] if email else ""],
-        "Phone":[phone[0] if phone else ""],
-        "Website":[website[0] if website else ""]
-    }
+        # Extract Phone
+        phone = re.findall(r'\+?\d[\d\s-]{8,}\d', text)
 
-    df = pd.DataFrame(data)
+        # Extract Website
+        website = re.findall(r'(www\.\S+)', text)
 
-    file = "scanned_cards.xlsx"
+        # Detect Name (First line usually)
+        name = ""
+        for line in result:
+            if not re.search(r'\d', line):
+                name = line
+                break
+
+        # Detect Occupation
+        occupation = ""
+        if len(result) > 1:
+            occupation = result[1]
+
+        st.subheader("Detected Details")
+
+        st.write("👤 Name:", name)
+        st.write("💼 Occupation:", occupation)
+        st.write("📧 Email:", email[0] if email else "")
+        st.write("📞 Phone:", phone[0] if phone else "")
+        st.write("🌐 Website:", website[0] if website else "")
+
+        data = {
+            "Name":[name],
+            "Occupation":[occupation],
+            "Email":[email[0] if email else ""],
+            "Phone":[phone[0] if phone else ""],
+            "Website":[website[0] if website else ""]
+        }
+
+        df = pd.DataFrame(data)
+
+        if os.path.exists(file):
+
+            old = pd.read_excel(file)
+
+            new = pd.concat([old, df], ignore_index=True)
+
+            new.to_excel(file, index=False)
+
+        else:
+
+            df.to_excel(file, index=False)
+
+        st.success("Details saved to Excel!")
+
+# -------------------- VIEW CONTACTS --------------------
+
+if menu == "View Contacts":
+
+    st.title("📂 Saved Contacts")
 
     if os.path.exists(file):
 
-        old_df = pd.read_excel(file)
+        df = pd.read_excel(file)
 
-        new_df = pd.concat([old_df, df], ignore_index=True)
-
-        new_df.to_excel(file, index=False)
+        st.dataframe(df)
 
     else:
 
-        df.to_excel(file, index=False)
-
-    st.success("Details saved to Excel!")
-
-# Show database
-
-if os.path.exists("scanned_cards.xlsx"):
-
-    st.subheader("Saved Contacts Database")
-
-    saved_df = pd.read_excel("scanned_cards.xlsx")
-
-    st.dataframe(saved_df)
+        st.warning("No contacts saved yet.")
