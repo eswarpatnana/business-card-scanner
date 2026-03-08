@@ -8,20 +8,44 @@ import numpy as np
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-file = "contacts.xlsx"
+FILE = "contacts.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
-# Initialize OCR
-reader = easyocr.Reader(['en'], gpu=False)
+
+# -------- LOAD OCR MODEL --------
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['en'], gpu=False)
+
+reader = load_reader()
 
 
-# -------- OCR FUNCTION --------
+# -------- PREPROCESS IMAGE (fix phone photo crash) --------
+def preprocess_image(image):
+
+    image = image.convert("RGB")
+
+    img = np.array(image)
+
+    height, width = img.shape[:2]
+
+    # resize large phone images
+    if width > 1200:
+        scale = 1200 / width
+        new_w = int(width * scale)
+        new_h = int(height * scale)
+        img = np.array(Image.fromarray(img).resize((new_w, new_h)))
+
+    return img
+
+
+# -------- OCR --------
 def extract_text(image):
 
-    image_np = np.array(image)
+    img = preprocess_image(image)
 
-    result = reader.readtext(image_np, detail=0)
+    result = reader.readtext(img, detail=0)
 
     text = " ".join(result)
 
@@ -31,34 +55,34 @@ def extract_text(image):
 # -------- EMAIL --------
 def extract_email(text):
 
-    email = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    match = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
 
-    return email[0] if email else ""
+    return match[0] if match else ""
 
 
 # -------- PHONE --------
 def extract_phone(text):
 
-    phone = re.findall(r'\+?\d[\d\s\-]{8,}', text)
+    match = re.findall(r'\+?\d[\d\s\-]{8,}', text)
 
-    return phone[0] if phone else ""
+    return match[0] if match else ""
 
 
 # -------- WEBSITE --------
 def extract_website(text):
 
-    website = re.findall(r'(www\.\S+|https?://\S+|\S+\.com)', text)
+    match = re.findall(r'(www\.\S+|https?://\S+|\S+\.com)', text)
 
-    return website[0] if website else ""
+    return match[0] if match else ""
 
 
 # -------- NAME --------
 def extract_name(text):
 
-    words = text.split()
+    lines = [l.strip() for l in text.split() if l.strip()]
 
-    if len(words) >= 2:
-        return words[0] + " " + words[1]
+    if len(lines) >= 2:
+        return lines[0] + " " + lines[1]
 
     return ""
 
@@ -126,11 +150,11 @@ if menu == "Scan Card":
 
         st.subheader("Detected Details")
 
-        st.write("Name:", name)
-        st.write("Occupation:", occupation)
-        st.write("Email:", email)
-        st.write("Phone:", phone)
-        st.write("Website:", website)
+        st.write("👤 Name:", name)
+        st.write("💼 Occupation:", occupation)
+        st.write("📧 Email:", email)
+        st.write("📞 Phone:", phone)
+        st.write("🌐 Website:", website)
 
         data = {
             "Name":[name],
@@ -142,17 +166,17 @@ if menu == "Scan Card":
 
         df = pd.DataFrame(data)
 
-        if os.path.exists(file):
+        if os.path.exists(FILE):
 
-            old = pd.read_excel(file)
+            old = pd.read_excel(FILE)
 
             new = pd.concat([old, df], ignore_index=True)
 
-            new.to_excel(file, index=False)
+            new.to_excel(FILE, index=False)
 
         else:
 
-            df.to_excel(file, index=False)
+            df.to_excel(FILE, index=False)
 
         st.success("Details saved to Excel!")
 
@@ -162,9 +186,9 @@ if menu == "View Contacts":
 
     st.title("Saved Contacts")
 
-    if os.path.exists(file):
+    if os.path.exists(FILE):
 
-        data = pd.read_excel(file)
+        data = pd.read_excel(FILE)
 
         st.dataframe(data)
 
