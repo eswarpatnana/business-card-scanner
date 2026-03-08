@@ -1,6 +1,7 @@
-import streamlit as st
-import pytesseract
-from PIL import Image
-import pandas as pd
-import re
-import os
+streamlit
+easyocr
+pillow
+pandas
+openpyxl
+torch
+torchvision
