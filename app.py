@@ -9,7 +9,7 @@ import cv2
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-EXCEL_FILE = "scanned_cards.xlsx"
+file = "scanned_cards.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
@@ -46,6 +46,7 @@ if menu == "Scan Card":
         img = np.array(image)
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
         gray = cv2.GaussianBlur(gray,(5,5),0)
 
         thresh = cv2.adaptiveThreshold(
@@ -60,50 +61,42 @@ if menu == "Scan Card":
         result = reader.readtext(thresh, detail=0)
 
         text = " ".join(result)
+
         # ---------- CLEAN OCR TEXT ----------
         text = text.replace("..", ".")
         text = text.replace(" .", ".")
-        text = text.replace("@email..com", "@email.com")
         text = text.replace("email..com", "email.com")
-
-       # Fix website mistakes
-       text = text.replace("wmichael", "www.michael")
-       text = text.replace("wethan", "www.ethan")
-       text = text.replace(" w", " www.")
-        
-
-        # -------- FIX COMMON OCR MISTAKES --------
-        text = text.replace("emaiicom", "email.com")
         text = text.replace("emailcom", "email.com")
-        text = text.replace("ww", "www.")
-        text = text.replace("www..", "www.")
-        text = text.replace("com ", ".com ")
+        text = text.replace("WWW", "www")
+
+        # Fix websites like wmichaeldesigns.com
+        text = re.sub(r'\bw([a-zA-Z0-9]+\.com)', r'www.\1', text)
 
         st.subheader("Detected Text")
         st.write(text)
 
-        # -------- EMAIL DETECTION --------
+        # -------- EMAIL --------
         email = ""
-        email_match = re.search(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+        email_match = re.findall(r'\S+@\S+\.\S+', text)
 
         if email_match:
-            email = email_match.group()
+            email = email_match[0]
 
-        # -------- PHONE DETECTION --------
+        # -------- PHONE --------
         phone = ""
-        phone_match = re.search(r'\+?\d[\d\s\-]{8,}', text)
+        phone_match = re.findall(r'\+?\d[\d\s\-]{8,}', text)
 
         if phone_match:
-            phone = phone_match.group()
+            phone = phone_match[0]
 
-        # -------- WEBSITE DETECTION --------
+        # -------- WEBSITE --------
         website = ""
-        website_match = re.search(r'www\.[A-Za-z0-9\-]+\.[A-Za-z]{2,}', text)
+        website_match = re.findall(r'(www\.\S+|https?://\S+)', text)
 
         if website_match:
-            website = website_match.group()
+            website = website_match[0]
 
-        # -------- NAME DETECTION --------
+        # -------- NAME --------
         name = ""
         words = text.split()
 
@@ -113,17 +106,18 @@ if menu == "Scan Card":
                     name = words[i] + " " + words[i+1]
                     break
 
-        # -------- OCCUPATION DETECTION --------
-        occupation = ""
-        keywords = [
+        # -------- OCCUPATION --------
+        occupation_keywords = [
             "manager","consultant","engineer","developer",
             "designer","director","founder","marketing",
             "sales","graphic","ceo","analyst"
         ]
 
+        occupation = ""
+
         for line in result:
-            for k in keywords:
-                if k in line.lower():
+            for key in occupation_keywords:
+                if key in line.lower():
                     occupation = line
                     break
 
@@ -145,12 +139,17 @@ if menu == "Scan Card":
 
         df = pd.DataFrame(data)
 
-        if os.path.exists(EXCEL_FILE):
-            old = pd.read_excel(EXCEL_FILE)
-            new = pd.concat([old, df], ignore_index=True)
-            new.to_excel(EXCEL_FILE, index=False)
+        if os.path.exists(file):
+
+            old_df = pd.read_excel(file)
+
+            new_df = pd.concat([old_df, df], ignore_index=True)
+
+            new_df.to_excel(file, index=False)
+
         else:
-            df.to_excel(EXCEL_FILE, index=False)
+
+            df.to_excel(file, index=False)
 
         st.success("Details saved to Excel!")
 
@@ -160,10 +159,12 @@ if menu == "View Contacts":
 
     st.title("📂 Saved Contacts")
 
-    if os.path.exists(EXCEL_FILE):
-        data = pd.read_excel(EXCEL_FILE)
-        st.dataframe(data)
+    if os.path.exists(file):
+
+        saved_df = pd.read_excel(file)
+
+        st.dataframe(saved_df)
+
     else:
+
         st.warning("No contacts saved yet.")
-
-
