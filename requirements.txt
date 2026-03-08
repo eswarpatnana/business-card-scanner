@@ -1,7 +1,7 @@
 streamlit
-easyocr
 opencv-python-headless
-Pillow
+pillow
 pandas
 numpy
 openpyxl
+google-cloud-vision
