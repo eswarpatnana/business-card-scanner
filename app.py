@@ -12,7 +12,6 @@ FILE = "contacts.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
-
 # -------- LOAD OCR MODEL --------
 @st.cache_resource
 def load_reader():
@@ -21,7 +20,7 @@ def load_reader():
 reader = load_reader()
 
 
-# -------- PREPROCESS IMAGE (fix phone photo crash) --------
+# -------- PREPROCESS IMAGE --------
 def preprocess_image(image):
 
     image = image.convert("RGB")
@@ -30,7 +29,7 @@ def preprocess_image(image):
 
     height, width = img.shape[:2]
 
-    # resize large phone images
+    # Resize large phone images
     if width > 1200:
         scale = 1200 / width
         new_w = int(width * scale)
@@ -47,7 +46,7 @@ def extract_text(image):
 
     result = reader.readtext(img, detail=0)
 
-    text = " ".join(result)
+    text = "\n".join(result)
 
     return text
 
@@ -55,7 +54,10 @@ def extract_text(image):
 # -------- EMAIL --------
 def extract_email(text):
 
-    match = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    match = re.findall(
+        r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
+        text
+    )
 
     return match[0] if match else ""
 
@@ -71,18 +73,37 @@ def extract_phone(text):
 # -------- WEBSITE --------
 def extract_website(text):
 
-    match = re.findall(r'(www\.\S+|https?://\S+|\S+\.com)', text)
+    match = re.findall(
+        r'((?:www\.)?[A-Za-z0-9-]+\.(?:com|org|net|co|in|io|ai))',
+        text
+    )
 
-    return match[0] if match else ""
+    if match:
+
+        site = match[0]
+
+        if not site.startswith("www"):
+            site = "www." + site
+
+        return site
+
+    return ""
 
 
 # -------- NAME --------
 def extract_name(text):
 
-    lines = [l.strip() for l in text.split() if l.strip()]
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    if len(lines) >= 2:
-        return lines[0] + " " + lines[1]
+    for line in lines[:3]:
+
+        words = line.split()
+
+        if len(words) >= 2:
+
+            if words[0][0].isupper() and words[1][0].isupper():
+
+                return words[0] + " " + words[1]
 
     return ""
 
@@ -96,13 +117,13 @@ def extract_occupation(text):
         "sales","ceo","analyst"
     ]
 
-    for word in text.split():
+    for line in text.split("\n"):
 
         for key in keywords:
 
-            if key in word.lower():
+            if key in line.lower():
 
-                return word
+                return line
 
     return ""
 
