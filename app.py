@@ -11,11 +11,13 @@ st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
 file = "scanned_cards.xlsx"
 
-# Sidebar Menu
-menu = st.sidebar.selectbox(
-    "Menu",
-    ["Scan Card", "View Contacts"]
-)
+menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
+
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['en'], gpu=False)
+
+reader = load_reader()
 
 # ---------------- SCAN CARD ----------------
 
@@ -23,10 +25,7 @@ if menu == "Scan Card":
 
     st.title("📇 AI Business Card Scanner")
 
-    option = st.radio(
-        "Choose Input Method",
-        ["Upload Image", "Use Camera"]
-    )
+    option = st.radio("Choose Input Method", ["Upload Image", "Use Camera"])
 
     image = None
 
@@ -44,13 +43,10 @@ if menu == "Scan Card":
 
         st.image(image, caption="Business Card", use_column_width=True)
 
-        # Convert image for OpenCV
         img = np.array(image)
 
-        # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # Improve contrast
         gray = cv2.adaptiveThreshold(
             gray,
             255,
@@ -60,8 +56,6 @@ if menu == "Scan Card":
             2
         )
 
-        reader = easyocr.Reader(['en'])
-
         result = reader.readtext(gray, detail=0)
 
         text = " ".join(result)
@@ -69,41 +63,64 @@ if menu == "Scan Card":
         st.subheader("Detected Text")
         st.write(text)
 
-        # Extract Email
-        email = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+        # ---------- Extract Email ----------
+        email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+        email = email_match.group() if email_match else ""
 
-        # Extract Phone
-        phone = re.findall(r"\+?\d[\d\s\-]{7,15}", text)
+        # ---------- Extract Phone ----------
+        phone_match = re.search(r"\+?\d[\d\-\.\s]{7,}\d", text)
+        phone = phone_match.group() if phone_match else ""
 
-        # Extract Website
-        website = re.findall(r"(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}", text)
+        # ---------- Extract Website ----------
+        website_match = re.search(r"(www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,})", text)
+        website = website_match.group() if website_match else ""
 
-        # Guess Name
+        # ---------- Clean text ----------
+        clean_text = text
+
+        for item in [email, phone, website]:
+            clean_text = clean_text.replace(item, "")
+
+        words = clean_text.split()
+
+        # ---------- Detect Name ----------
         name = ""
-        for line in result:
-            if not re.search(r'\d', line) and len(line.split()) <= 3:
-                name = line
-                break
+        for i in range(len(words)-1):
+            if words[i].isalpha() and words[i+1].isalpha():
+                if words[i][0].isupper() and words[i+1][0].isupper():
+                    name = words[i] + " " + words[i+1]
+                    break
 
-        # Guess Occupation
+        # ---------- Detect Occupation ----------
+        occupation_keywords = [
+            "manager","consultant","engineer","developer",
+            "designer","director","founder","marketing",
+            "sales","graphic","ceo","analyst"
+        ]
+
         occupation = ""
-        if len(result) > 1:
-            occupation = result[1]
+
+        for line in result:
+            lower = line.lower()
+            for key in occupation_keywords:
+                if key in lower:
+                    occupation = line
+                    break
 
         st.subheader("Detected Details")
 
         st.write("👤 Name:", name)
         st.write("💼 Occupation:", occupation)
-        st.write("📧 Email:", email[0] if email else "")
-        st.write("📞 Phone:", phone[0] if phone else "")
-        st.write("🌐 Website:", website[0] if website else "")
+        st.write("📧 Email:", email)
+        st.write("📞 Phone:", phone)
+        st.write("🌐 Website:", website)
 
         data = {
             "Name":[name],
             "Occupation":[occupation],
-            "Email":[email[0] if email else ""],
-            "Phone":[phone[0] if phone else ""],
-            "Website":[website[0] if website else ""]
+            "Email":[email],
+            "Phone":[phone],
+            "Website":[website]
         }
 
         df = pd.DataFrame(data)
@@ -137,4 +154,3 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet.")
-
