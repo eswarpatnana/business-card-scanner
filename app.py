@@ -137,3 +137,4 @@ if menu == "View Contacts":
     else:
 
         st.warning("No contacts saved yet.")
+
