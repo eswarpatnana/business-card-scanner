@@ -1,119 +1,85 @@
 import streamlit as st
-from google.cloud import vision
+import pytesseract
 from PIL import Image
 import pandas as pd
 import re
 import os
-import io
+import numpy as np
+import cv2
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-excel_file = "contacts.xlsx"
+file = "contacts.xlsx"
 
 menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts"])
 
+# -------- OCR FUNCTION --------
+def extract_text(image):
 
-# -------- GOOGLE VISION OCR --------
-def google_ocr(image):
+    img = np.array(image)
 
-    client = vision.ImageAnnotatorClient.from_service_account_file(
-        "second-lodge-489610-k2-da8eba67b46c.json"
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    gray = cv2.adaptiveThreshold(
+        gray,255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        11,2
     )
 
-    img_byte_arr = io.BytesIO()
-    image.save(img_byte_arr, format='PNG')
+    text = pytesseract.image_to_string(gray)
 
-    content = img_byte_arr.getvalue()
-
-    vision_image = vision.Image(content=content)
-
-    response = client.text_detection(image=vision_image)
-
-    texts = response.text_annotations
-
-    if texts:
-        return texts[0].description
-    else:
-        return ""
+    return text
 
 
 # -------- EMAIL --------
 def extract_email(text):
 
-    pattern = r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+    email = re.findall(r'\S+@\S+', text)
 
-    match = re.search(pattern, text)
-
-    if match:
-        return match.group()
-
-    return ""
+    return email[0] if email else ""
 
 
 # -------- PHONE --------
 def extract_phone(text):
 
-    pattern = r'\+?\d[\d\s\-]{8,}\d'
+    phone = re.findall(r'\+?\d[\d\s\-]{8,}', text)
 
-    match = re.search(pattern, text)
-
-    if match:
-        return match.group()
-
-    return ""
+    return phone[0] if phone else ""
 
 
 # -------- WEBSITE --------
 def extract_website(text):
 
-    patterns = [
-        r'www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
-        r'[A-Za-z0-9.-]+\.com',
-        r'https?://[A-Za-z0-9.-]+'
-    ]
+    website = re.findall(r'(www\.\S+|https?://\S+|\S+\.com)', text)
 
-    for p in patterns:
-        match = re.search(p, text)
-
-        if match:
-            site = match.group()
-
-            if not site.startswith("www"):
-                site = "www." + site
-
-            return site
-
-    return ""
+    return website[0] if website else ""
 
 
 # -------- NAME --------
 def extract_name(text):
 
-    words = text.split()
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    for i in range(len(words)-1):
-
-        if words[i].istitle() and words[i+1].istitle():
-
-            return words[i] + " " + words[i+1]
-
-    return ""
+    return lines[0] if len(lines) > 0 else ""
 
 
 # -------- OCCUPATION --------
 def extract_occupation(text):
 
-    jobs = [
+    keywords = [
         "manager","consultant","engineer","developer",
         "designer","director","founder","marketing",
         "sales","ceo","analyst"
     ]
 
-    for j in jobs:
+    for line in text.split("\n"):
 
-        if j in text.lower():
+        for key in keywords:
 
-            return j.title()
+            if key in line.lower():
+
+                return line
 
     return ""
 
@@ -147,7 +113,7 @@ if menu == "Scan Card":
 
         st.image(image, caption="Business Card", use_column_width=True)
 
-        text = google_ocr(image)
+        text = extract_text(image)
 
         st.subheader("Detected Text")
 
@@ -177,19 +143,19 @@ if menu == "Scan Card":
 
         df = pd.DataFrame(data)
 
-        if os.path.exists(excel_file):
+        if os.path.exists(file):
 
-            old = pd.read_excel(excel_file)
+            old = pd.read_excel(file)
 
             new = pd.concat([old, df], ignore_index=True)
 
-            new.to_excel(excel_file, index=False)
+            new.to_excel(file, index=False)
 
         else:
 
-            df.to_excel(excel_file, index=False)
+            df.to_excel(file, index=False)
 
-        st.success("Details saved to Excel")
+        st.success("Details saved to Excel!")
 
 
 # -------- VIEW CONTACTS --------
@@ -197,9 +163,9 @@ if menu == "View Contacts":
 
     st.title("Saved Contacts")
 
-    if os.path.exists(excel_file):
+    if os.path.exists(file):
 
-        data = pd.read_excel(excel_file)
+        data = pd.read_excel(file)
 
         st.dataframe(data)
 
