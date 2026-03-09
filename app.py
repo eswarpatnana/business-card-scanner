@@ -107,7 +107,7 @@ def extract_text(image):
     normal_result = reader.readtext(normal_img, detail=0)
     enhanced_result = reader.readtext(np.array(enhanced_img), detail=0)
     all_text = list(set(normal_result + enhanced_result))
-    return "
+      return "
 ".join(all_text)
 
 def preprocess_image(image):
@@ -355,3 +355,4 @@ elif menu == "Raw Data":
         st.dataframe(df, use_container_width=True)
     else:
         st.warning("No data yet")
+
