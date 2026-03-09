@@ -46,20 +46,11 @@ def categorize_occupation(occupation):
 def clean_email(email):
     if not email:
         return ""
-    email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
+    # Remove markdown links and www from domain
     email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
+    email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
     email = re.sub(r'<[^>]+>', '', email)
     return email.strip()
-
-def fix_website_text(text):
-    """🎯 FIX wwwethanroberts com → www.ethanroberts.com"""
-    # Fix missing dots: wwwname com → www.name.com
-    text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    # Fix wwwnamecom → www.name.com
-    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    # Fix extra spaces: www . name . com
-    text = re.sub(r'\s*\.\s*', '.', text)
-    return text
 
 def safe_load_contacts():
     if not os.path.exists(FILE):
@@ -96,6 +87,15 @@ def extract_text(image):
     result = reader.readtext(img, detail=0)
     return "\n".join(result)
 
+def fix_domains(text):
+    # 🎯 MINIMAL domain fixes only - won't break emails
+    patterns = [
+        (r'([a-z]+)(com|org|net|co|in|io|ai|uk|edu)(?=\s|$)', r'\1.\2', re.IGNORECASE),
+    ]
+    for pattern, repl, flags in patterns:
+        text = re.sub(pattern, repl, text, flags=flags)
+    return text
+
 def extract_phones(text):
     pattern = r'\+?[\d\s\-\(\)\.]{8,}'
     all_phones = re.findall(pattern, text)
@@ -116,18 +116,20 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    # Clean website text first for better email detection
-    text = fix_website_text(text)
-    matches = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    # 🎯 STRAIGHTFORWARD EMAIL - NO WEBSITE INTERFERENCE
+    pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
         return clean_email(matches[0])
     return ""
 
 def extract_website(text):
-    # 🎯 CRITICAL FIX: Clean website text FIRST
-    text = fix_website_text(text)
+    # 🎯 SPECIAL WEBSITE FIX for wwwname com
+    # Pattern 1: wwwname com → www.name.com
+    text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    # Pattern 2: wwwnamecom → www.name.com  
+    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
     
-    # Multiple patterns for websites
     patterns = [
         r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
         r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
@@ -141,7 +143,6 @@ def extract_website(text):
             if not site.startswith(('http://', 'https://', 'www.')):
                 site = 'www.' + site
             return site
-    
     return ""
 
 def extract_occupation(text):
@@ -176,7 +177,7 @@ if menu == "Scan Card":
         name = extract_name(text)
         email = extract_email(text)
         phones = extract_phones(text)
-        website = extract_website(text)  # NOW FIXED!
+        website = extract_website(text)
         raw_occupation = extract_occupation(text)
         category = categorize_occupation(raw_occupation)
 
@@ -207,7 +208,7 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
-# -------- VIEW CONTACTS (unchanged) --------
+# [Keep View Contacts and Raw Data sections exactly the same as previous version]
 elif menu == "View Contacts":
     st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
@@ -215,14 +216,12 @@ elif menu == "View Contacts":
     if not df.empty:
         df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.sidebar.subheader("🔍 Search")
-            search_term = st.sidebar.text_input("Search names/emails:")
-            
-            st.sidebar.subheader("🏷️ Category Filter")
-            categories = sorted(df_unique['Category'].unique())
-            selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
+        st.sidebar.subheader("🔍 Search")
+        search_term = st.sidebar.text_input("Search names/emails:")
+        
+        st.sidebar.subheader("🏷️ Category Filter")
+        categories = sorted(df_unique['Category'].unique())
+        selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
         
         filtered_df = df_unique
         
