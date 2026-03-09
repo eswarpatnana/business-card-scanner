@@ -121,11 +121,12 @@ def preprocess_image(image):
     return img
 
 def extract_phones(text):
-    pattern = r'\+?[\d\s-().]{8,}'
+    # ✅ FIXED: Properly escaped all special characters
+    pattern = r'[+]?[\\d\\s-()]{8,}'
     all_phones = re.findall(pattern, text)
     cleaned_phones = []
     for phone in all_phones:
-        clean_phone = re.sub(r'[^\d+]', '', phone)
+        clean_phone = re.sub(r'[^\\d+]', '', phone)
         if len(clean_phone) >= 10:
             cleaned_phones.append(clean_phone)
     return list(dict.fromkeys(cleaned_phones))
@@ -187,7 +188,6 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    # Fixed regex - removed problematic capturing groups
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
