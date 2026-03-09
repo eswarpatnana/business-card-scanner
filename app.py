@@ -17,7 +17,6 @@ def load_reader():
 
 reader = load_reader()
 
-# -------- MINIMAL PREPROCESS (BACK TO SIMPLE) --------
 def preprocess_image(image):
     image = image.convert("RGB")
     img = np.array(image)
@@ -29,38 +28,58 @@ def preprocess_image(image):
         img = np.array(Image.fromarray(img).resize((new_w, new_h)))
     return img
 
-# -------- OCR --------
 def extract_text(image):
     img = preprocess_image(image)
     result = reader.readtext(img, detail=0)
-    return "\n".join(result)  # Back to original \n join
+    return "\n".join(result)
 
-# -------- DOMAIN FIX ONLY (for your email/website issue) --------
+# -------- IMPROVED NAME DETECTION --------
+def extract_name(text):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    
+    # Method 1: First line with 2+ capitalized words (most common)
+    for line in lines[:5]:  # Check more lines
+        words = line.split()
+        caps_words = [w for w in words if w and w[0].isupper()]
+        if len(caps_words) >= 2:
+            return " ".join(caps_words[:2])
+    
+    # Method 2: Any line with 2+ words where first letters are uppercase
+    for line in lines:
+        words = line.split()
+        if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper():
+            return f"{words[0]} {words[1]}"
+    
+    # Method 3: First non-empty line with multiple words (fallback)
+    for line in lines:
+        words = line.split()
+        if len(words) >= 2:
+            return " ".join(words[:2])
+    
+    return "Name not found"
+
+# Keep your working functions
 def fix_domains(text):
-    # Fix ONLY gmailcom → gmail.com, etc.
     patterns = [
         (r'([a-z]+)com', r'\1.com'),
         (r'([a-z]+)org', r'\1.org'),
         (r'([a-z]+)net', r'\1.net'),
-        (r'([a-z]+)co(?=[^a-z])', r'\1.co'),  # co followed by space/line
+        (r'([a-z]+)co(?=[^a-z])', r'\1.co'),
         (r'([a-z]+)in(?=[^a-z])', r'\1.in'),
     ]
     for pattern, replacement in patterns:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
 
-# -------- EMAIL --------
 def extract_email(text):
     text = fix_domains(text)
     match = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
     return match[0] if match else ""
 
-# -------- PHONE --------
 def extract_phone(text):
     match = re.findall(r'\+?[\d\s\-]{8,}', text)
     return match[0] if match else ""
 
-# -------- WEBSITE --------
 def extract_website(text):
     text = fix_domains(text)
     match = re.findall(r'(?:www\.)?([A-Za-z0-9-]+\.(?:com|org|net|co|in|io|ai))', text)
@@ -69,16 +88,6 @@ def extract_website(text):
         if not site.startswith("www"):
             site = "www." + site
         return site
-    return ""
-
-# -------- NAME & OCCUPATION (ORIGINAL) --------
-def extract_name(text):
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    for line in lines[:3]:
-        words = line.split()
-        if len(words) >= 2:
-            if words[0][0].isupper() and words[1][0].isupper():
-                return words[0] + " " + words[1]
     return ""
 
 def extract_occupation(text):
@@ -111,7 +120,6 @@ if menu == "Scan Card":
         st.subheader("Detected Text")
         st.text_area("", text, height=150)
 
-        # Extract with domain fix
         name = extract_name(text)
         email = extract_email(text)
         phone = extract_phone(text)
@@ -121,14 +129,13 @@ if menu == "Scan Card":
         st.subheader("Detected Details")
         col1, col2 = st.columns(2)
         with col1:
-            st.write("👤 Name:", name)
-            st.write("💼 Occupation:", occupation)
+            st.success(f"👤 Name: **{name}**")
+            st.write(f"💼 Occupation: {occupation}")
         with col2:
-            st.write("📧 Email:", email)
-            st.write("📞 Phone:", phone)
-            st.write("🌐 Website:", website)
+            st.write(f"📧 Email: {email}")
+            st.write(f"📞 Phone: {phone}")
+            st.write(f"🌐 Website: {website}")
 
-        # Save
         data = {"Name":[name], "Occupation":[occupation], "Email":[email], "Phone":[phone], "Website":[website]}
         df = pd.DataFrame(data)
         if os.path.exists(FILE):
@@ -137,9 +144,8 @@ if menu == "Scan Card":
             new.to_excel(FILE, index=False)
         else:
             df.to_excel(FILE, index=False)
-        st.success("Details saved to Excel!")
+        st.success("✅ Saved to Excel!")
 
-# -------- VIEW CONTACTS --------
 if menu == "View Contacts":
     st.title("Saved Contacts")
     if os.path.exists(FILE):
