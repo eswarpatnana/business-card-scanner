@@ -123,13 +123,10 @@ def extract_email(text):
         return clean_email(matches[0])
     return ""
 
-def extract_website(text):
-    # 🎯 SPECIAL WEBSITE FIX for wwwname com
-    # Pattern 1: wwwname com → www.name.com
+ def extract_website(text):
+    # KEEP WORKING WEBSITE LOGIC
     text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    # Pattern 2: wwwnamecom → www.name.com  
     text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    
     patterns = [
         r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
         r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
@@ -276,3 +273,4 @@ elif menu == "Raw Data":
         st.dataframe(df, use_container_width=True)
     else:
         st.warning("No data yet")
+
