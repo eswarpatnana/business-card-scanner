@@ -8,9 +8,18 @@ import numpy as np
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
-FILE = "contacts.xlsx"
+DATA_FILE = "contacts.xlsx"
 
-menu = st.sidebar.selectbox("Menu", ["Scan Card","View Contacts","Raw Data"])
+menu = st.sidebar.selectbox(
+    "Navigation",
+    [
+        "Scan Cards",
+        "Contacts Dashboard",
+        "Analytics",
+        "Export Data",
+        "Raw Database"
+    ]
+)
 
 @st.cache_resource
 def load_reader():
@@ -47,7 +56,7 @@ def extract_text(image):
 
 
 # ---------- EMAIL ----------
-def extract_email(text):
+def detect_email(text):
 
     match = re.findall(
         r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
@@ -58,14 +67,16 @@ def extract_email(text):
 
 
 # ---------- PHONE ----------
-def extract_phone(text):
+def detect_phones(text):
 
     phones = re.findall(r'\+?\d[\d\s\-]{8,}', text)
 
     clean = []
 
     for p in phones:
+
         p = re.sub(r'[^\d+]', '', p)
+
         if len(p) >= 10:
             clean.append(p)
 
@@ -73,7 +84,7 @@ def extract_phone(text):
 
 
 # ---------- WEBSITE ----------
-def extract_website(text):
+def detect_website(text):
 
     pattern = r'((?:www\.)?[a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
 
@@ -91,8 +102,34 @@ def extract_website(text):
     return ""
 
 
+# ---------- LINKEDIN ----------
+def detect_linkedin(text):
+
+    match = re.findall(
+        r'(linkedin\.com\/[A-Za-z0-9\/\-]+)',
+        text,
+        re.IGNORECASE
+    )
+
+    if match:
+        return "https://" + match[0]
+
+    return ""
+
+
+# ---------- ADDRESS ----------
+def detect_address(text):
+
+    for line in text.split("\n"):
+
+        if re.search(r'\d{5,6}', line):
+            return line
+
+    return ""
+
+
 # ---------- NAME ----------
-def extract_name(text):
+def detect_name(text):
 
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
@@ -106,31 +143,15 @@ def extract_name(text):
 
                 return words[0] + " " + words[1]
 
-    return "Name not found"
+    return "Unknown"
 
 
 # ---------- COMPANY ----------
-def extract_company(text):
-
-    lines = text.split("\n")
-
-    for line in lines:
-
-        if any(word in line.lower() for word in
-            ["inc","ltd","company","solutions","technologies","corp"]):
-
-            return line
-
-    return ""
-
-
-# ---------- OCCUPATION ----------
-def extract_occupation(text):
+def detect_company(text):
 
     keywords = [
-        "manager","director","ceo","founder","engineer",
-        "developer","designer","consultant","analyst",
-        "sales","marketing","architect"
+        "inc","ltd","solutions",
+        "technologies","company","corp"
     ]
 
     for line in text.split("\n"):
@@ -144,90 +165,170 @@ def extract_occupation(text):
     return ""
 
 
-# ---------- LOAD CONTACTS ----------
+# ---------- CONTACT SUMMARY ----------
+def contact_summary(name, company, email, phones, website):
+
+    return f"""
+Name: {name}
+Company: {company}
+
+Email: {email}
+Phone: {", ".join(phones)}
+
+Website: {website}
+"""
+
+
+# ---------- VCARD ----------
+def generate_vcard(name, phone, email, company):
+
+    return f"""
+BEGIN:VCARD
+VERSION:3.0
+FN:{name}
+ORG:{company}
+TEL:{phone}
+EMAIL:{email}
+END:VCARD
+"""
+
+
+# ---------- LOAD DATABASE ----------
 def load_contacts():
 
-    if os.path.exists(FILE):
+    if os.path.exists(DATA_FILE):
 
-        return pd.read_excel(FILE)
+        return pd.read_excel(DATA_FILE)
 
     return pd.DataFrame(
-        columns=["Name","Company","Occupation","Email","Phone","Website"]
+        columns=[
+            "Name","Company",
+            "Email","Phone","Website"
+        ]
     )
 
 
-# ---------- SCAN CARD ----------
-if menu == "Scan Card":
+# ---------- DUPLICATE CHECK ----------
+def is_duplicate(df,name,email):
+
+    if df.empty:
+        return False
+
+    mask = (
+        (df["Name"].str.lower()==name.lower()) &
+        (df["Email"].str.lower()==email.lower())
+    )
+
+    return mask.any()
+
+
+# ---------- SAVE CONTACT ----------
+def save_contact(name,company,email,phones,website):
+
+    df = load_contacts()
+
+    if not is_duplicate(df,name,email):
+
+        new = pd.DataFrame([{
+            "Name":name,
+            "Company":company,
+            "Email":email,
+            "Phone":", ".join(phones),
+            "Website":website
+        }])
+
+        df = pd.concat([df,new],ignore_index=True)
+
+        df.to_excel(DATA_FILE,index=False)
+
+        return True
+
+    return False
+
+
+# ---------- SCAN CARDS ----------
+if menu == "Scan Cards":
 
     st.title("AI Business Card Scanner")
 
-    option = st.radio("Choose Input Method",["Upload Image","Use Camera"])
+    option = st.radio(
+        "Input Method",
+        ["Upload Images","Use Camera"]
+    )
 
-    image = None
+    images = []
 
-    if option == "Upload Image":
+    if option == "Upload Images":
 
-        uploaded = st.file_uploader("Upload Card",type=["jpg","png","jpeg"])
+        files = st.file_uploader(
+            "Upload Cards",
+            type=["jpg","png","jpeg"],
+            accept_multiple_files=True
+        )
 
-        if uploaded:
-            image = Image.open(uploaded)
+        if files:
+            images = files
 
     if option == "Use Camera":
 
         cam = st.camera_input("Take Photo")
 
         if cam:
-            image = Image.open(cam)
+            images = [cam]
 
-    if image is not None:
+    for file in images:
+
+        image = Image.open(file)
 
         st.image(image,use_column_width=True)
 
         text = extract_text(image)
 
-        st.subheader("Detected Text")
+        st.text_area("Detected Text",text)
 
-        st.text_area("",text,height=150)
-
-        name = extract_name(text)
-        email = extract_email(text)
-        phones = extract_phone(text)
-        website = extract_website(text)
-        company = extract_company(text)
-        occupation = extract_occupation(text)
+        name = detect_name(text)
+        email = detect_email(text)
+        phones = detect_phones(text)
+        website = detect_website(text)
+        company = detect_company(text)
+        linkedin = detect_linkedin(text)
+        address = detect_address(text)
 
         st.success(f"👤 {name}")
 
-        st.write("🏢 Company:",company)
-        st.write("💼 Occupation:",occupation)
-        st.write("📧 Email:",email)
-        st.write("🌐 Website:",website)
+        st.write("🏢",company)
+        st.write("📧",email)
+        st.write("🌐",website)
+        st.write("🔗",linkedin)
+        st.write("📍",address)
 
-        for i,p in enumerate(phones,1):
-            st.write(f"📞 Phone {i}:",p)
+        for p in phones:
+            st.write("📞",p)
 
-        if name != "Name not found":
+        summary = contact_summary(name,company,email,phones,website)
 
-            df = load_contacts()
+        st.subheader("Contact Summary")
 
-            new = pd.DataFrame([{
-                "Name":name,
-                "Company":company,
-                "Occupation":occupation,
-                "Email":email,
-                "Phone":", ".join(phones),
-                "Website":website
-            }])
+        st.text(summary)
 
-            df = pd.concat([df,new],ignore_index=True)
+        vcard = generate_vcard(name,", ".join(phones),email,company)
 
-            df.to_excel(FILE,index=False)
+        st.download_button(
+            "Download Contact",
+            vcard,
+            file_name="contact.vcf"
+        )
 
+        saved = save_contact(name,company,email,phones,website)
+
+        if saved:
             st.success("Contact saved!")
+        else:
+            st.warning("Duplicate contact")
 
 
-# ---------- VIEW CONTACTS ----------
-elif menu == "View Contacts":
+# ---------- DASHBOARD ----------
+elif menu == "Contacts Dashboard":
 
     st.title("Contacts Dashboard")
 
@@ -237,24 +338,64 @@ elif menu == "View Contacts":
 
         st.metric("Total Contacts",len(df))
 
+        search = st.sidebar.text_input("Search")
+
+        if search:
+
+            df = df[
+                df["Name"].str.contains(search,case=False,na=False) |
+                df["Email"].str.contains(search,case=False,na=False)
+            ]
+
         st.dataframe(df)
+
+    else:
+
+        st.warning("No contacts yet")
+
+
+# ---------- ANALYTICS ----------
+elif menu == "Analytics":
+
+    st.title("Contact Analytics")
+
+    df = load_contacts()
+
+    if not df.empty:
+
+        st.bar_chart(df["Company"].value_counts())
+
+        st.line_chart(df.index)
+
+    else:
+
+        st.warning("No data")
+
+
+# ---------- EXPORT ----------
+elif menu == "Export Data":
+
+    st.title("Export Contacts")
+
+    df = load_contacts()
+
+    if not df.empty:
 
         csv = df.to_csv(index=False)
 
         st.download_button(
-            "Download Contacts CSV",
+            "Download CSV",
             csv,
-            "contacts.csv",
-            "text/csv"
+            "contacts.csv"
         )
 
     else:
 
-        st.warning("Scan cards first")
+        st.warning("No contacts")
 
 
-# ---------- RAW DATA ----------
-elif menu == "Raw Data":
+# ---------- RAW DATABASE ----------
+elif menu == "Raw Database":
 
     st.title("Raw Data")
 
