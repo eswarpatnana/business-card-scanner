@@ -78,9 +78,9 @@ def categorize_occupation(occupation):
 def clean_email(email):
     if not email:
         return ""
-    email = re.sub(r'[([^]]+)]([^)]+)', r'\\u0001', email)
-    email = re.sub(r'www.([a-zA-Z0-9.-]+.[a-zA-Z]{2,})', r'\\u0001', email)
-    email = re.sub(r'<[^>]+>', '', email)
+    email = re.sub(r'\[[^\]]+\]', '', email)  # Remove [text]
+    email = re.sub(r'www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', email)  # Remove websites
+    email = re.sub(r'<[^>]+>', '', email)  # Remove HTML tags
     return email.strip()
 
 def safe_load_contacts():
@@ -121,11 +121,11 @@ def preprocess_image(image):
     return img
 
 def extract_phones(text):
-    pattern = r'\+?[ds-().]{8,}'
+    pattern = r'\+?[\d\s-().]{8,}'
     all_phones = re.findall(pattern, text)
     cleaned_phones = []
     for phone in all_phones:
-        clean_phone = re.sub(r'[^d+]', '', phone)
+        clean_phone = re.sub(r'[^\d+]', '', phone)
         if len(clean_phone) >= 10:
             cleaned_phones.append(clean_phone)
     return list(dict.fromkeys(cleaned_phones))
@@ -187,19 +187,17 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    text = re.sub(r'[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,})]([^)]*)', r'\\u0001', text)
-    pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}'
+    # Fixed regex - removed problematic capturing groups
+    pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
         return clean_email(matches[0])
     return ""
 
 def extract_website(text):
-    text = re.sub(r'(www)([a-zA-Z0-9]+)s+([a-zA-Z]{2,})', r'\\u0001.\\u0002.\\u0003', text, flags=re.IGNORECASE)
-    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\\u0001.\\u0002.\\u0003', text, flags=re.IGNORECASE)
     patterns = [
-        r'(?:www.|https?://)?([a-zA-Z0-9-]+.(?:com|org|net|co|in|io|ai|edu|gov))',
-        r'www.([a-zA-Z0-9-]+.[a-zA-Z]{2,})',
+        r'(?:www\.|https?://)?([a-zA-Z0-9-]+(?:\.com|\.org|\.net|\.co|\.in|\.io|\.ai|\.edu|\.gov))',
+        r'www\.([a-zA-Z0-9-]+.[a-zA-Z]{2,})',
         r'([a-zA-Z0-9-]+.(?:com|org|net|co|in|io|ai))'
     ]
     for pattern in patterns:
