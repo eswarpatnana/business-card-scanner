@@ -36,23 +36,40 @@ OCCUPATION_GROUPS = {
 }
 
 def enhance_for_handwriting(image):
+    """🎯 SUPERCHARGED HANDWRITING OCR PREPROCESSING"""
+    # Convert to OpenCV format
     img_array = np.array(image)
     img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    
+    # 1. RESIZE for optimal DPI (300 DPI)
     height, width = img_cv.shape[:2]
     if width < 1200:
         scale = 1200 / width
         new_width = int(width * scale)
         new_height = int(height * scale)
         img_cv = cv2.resize(img_cv, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+    
+    # 2. GRAYSCALE
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    
+    # 3. NOISE REDUCTION (Gaussian + Median)
     denoised = cv2.GaussianBlur(gray, (3, 3), 0)
     denoised = cv2.medianBlur(denoised, 3)
+    
+    # 4. SHARPENING
     kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
     sharpened = cv2.filter2D(denoised, -1, kernel)
-    thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    
+    # 5. ADAPTIVE THRESHOLDING (BEST FOR HANDWRITING)
+    thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                  cv2.THRESH_BINARY, 11, 2)
+    
+    # 6. MORPHOLOGICAL CLEANUP
     kernel = np.ones((2,2), np.uint8)
     cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
     cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+    
+    # 7. DESKEW (straighten tilted text)
     coords = np.column_stack(np.where(cleaned > 0))
     angle = cv2.minAreaRect(coords)[-1]
     if angle < -45:
@@ -62,8 +79,12 @@ def enhance_for_handwriting(image):
     (h, w) = cleaned.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    deskewed = cv2.warpAffine(cleaned, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return Image.fromarray(deskewed)
+    deskewed = cv2.warpAffine(cleaned, M, (w, h), flags=cv2.INTER_CUBIC, 
+                             borderMode=cv2.BORDER_REPLICATE)
+    
+    # Convert back to PIL
+    enhanced_img = Image.fromarray(deskewed)
+    return enhanced_img
 
 def categorize_occupation(occupation):
     if not occupation or pd.isna(occupation):
@@ -78,9 +99,9 @@ def categorize_occupation(occupation):
 def clean_email(email):
     if not email:
         return ""
-    email = re.sub(r'\[[^\]]+\]', '', email)  # Remove [text]
-    email = re.sub(r'www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', email)  # Remove websites
-    email = re.sub(r'<[^>]+>', '', email)  # Remove HTML tags
+    email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
+    email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
+    email = re.sub(r'<[^>]+>', '', email)
     return email.strip()
 
 def safe_load_contacts():
@@ -102,10 +123,15 @@ def safe_load_contacts():
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
 def extract_text(image):
+    # 🎯 DOUBLE OCR: Normal + Handwriting enhanced
     normal_img = preprocess_image(image)
     enhanced_img = enhance_for_handwriting(image)
+    
+    # OCR on both versions
     normal_result = reader.readtext(normal_img, detail=0)
     enhanced_result = reader.readtext(np.array(enhanced_img), detail=0)
+    
+    # Combine and deduplicate
     all_text = list(set(normal_result + enhanced_result))
     return "\n".join(all_text)
 
@@ -121,73 +147,27 @@ def preprocess_image(image):
     return img
 
 def extract_phones(text):
-    # ✅ FIXED: Properly escaped all special characters
-    pattern = r'[+]?[\\d\\s-()]{8,}'
+    pattern = r'\+?[\d\s\-\(\)\.]{8,}'
     all_phones = re.findall(pattern, text)
     cleaned_phones = []
     for phone in all_phones:
-        clean_phone = re.sub(r'[^\\d+]', '', phone)
+        clean_phone = re.sub(r'[^\d+]', '', phone)
         if len(clean_phone) >= 10:
             cleaned_phones.append(clean_phone)
     return list(dict.fromkeys(cleaned_phones))
 
 def extract_name(text):
-    lines = [l.strip() for l in text.split("\n") if l.strip() and len(l.strip()) > 1]
-    
-    # Method 1: Look for lines with 2+ capitalized words (most common name pattern)
-    for line in lines[:8]:  # Check first 8 lines
-        words = line.split()
-        caps_words = [w for w in words if w and w[0].isupper() and len(w) > 1]
-        # If line has 2-4 capitalized words and total length reasonable for name
-        if 2 <= len(caps_words) <= 4 and len(line) <= 50:
-            # Clean up the name
-            name_candidate = " ".join(caps_words[:3])
-            if not any(skip in name_candidate.lower() for skip in ['inc', 'llc', 'corp', 'ltd', 'www', 'com']):
-                return name_candidate
-    
-    # Method 2: Single line with multiple capital letters (John Smith style)
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
     for line in lines[:5]:
-        upper_count = sum(1 for c in line if c.isupper())
-        total_letters = sum(1 for c in line if c.isalpha())
-        if total_letters > 0 and upper_count / total_letters >= 0.25 and len(line.split()) >= 2:
-            words = line.split()
-            caps_words = [w for w in words if w[0].isupper()]
-            if len(caps_words) >= 2:
-                return " ".join(caps_words[:3])
-    
-    # Method 3: First line with highest capitalization ratio
-    best_line = None
-    best_ratio = 0
-    
-    for line in lines[:6]:
-        upper_count = sum(1 for c in line if c.isupper())
-        total_letters = sum(1 for c in line if c.isalpha())
-        if total_letters > 5:  # Line must be substantial enough
-            ratio = upper_count / total_letters
-            if ratio > best_ratio and ratio > 0.2:
-                best_ratio = ratio
-                best_line = line
-                if len(line.split()) >= 2:
-                    break
-    
-    if best_line:
-        words = best_line.split()
-        caps_words = [w for w in words if w[0].isupper()]
+        words = line.split()
+        caps_words = [w for w in words if w and w[0].isupper()]
         if len(caps_words) >= 2:
-            return " ".join(caps_words[:3])
-    
-    # Method 4: Longest line in top 3 lines (names are often prominent)
-    top_lines = lines[:3]
-    if top_lines:
-        longest_line = max(top_lines, key=len)
-        words = longest_line.split()
-        caps_words = [w for w in words if w[0].isupper()]
-        if len(caps_words) >= 2:
-            return " ".join(caps_words[:3])
-    
+            return " ".join(caps_words[:2])
     return "Name not found"
 
 def extract_email(text):
+    # Handle markdown links FIRST
+    text = re.sub(r'\[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\]\([^)]*\)', r'\1', text)
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
@@ -195,11 +175,16 @@ def extract_email(text):
     return ""
 
 def extract_website(text):
+    # Fix wwwname com → www.name.com
+    text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    
     patterns = [
-        r'(?:www\.|https?://)?([a-zA-Z0-9-]+(?:\.com|\.org|\.net|\.co|\.in|\.io|\.ai|\.edu|\.gov))',
-        r'www\.([a-zA-Z0-9-]+.[a-zA-Z]{2,})',
-        r'([a-zA-Z0-9-]+.(?:com|org|net|co|in|io|ai))'
+        r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
+        r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
+        r'([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
     ]
+    
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
@@ -238,7 +223,7 @@ if menu == "Scan Card":
             st.image(image, caption="📸 Original", use_column_width=True)
         with col2:
             enhanced = enhance_for_handwriting(image)
-            st.image(enhanced, caption="🧠 Enhanced", use_column_width=True)
+            st.image(enhanced, caption="🧠 Enhanced for Handwriting", use_column_width=True)
         
         text = extract_text(image)
         st.subheader("📄 Detected Text")
@@ -258,31 +243,7 @@ if menu == "Scan Card":
             st.info(f"🏷️ {category}")
         with col2:
             st.markdown(f"📧 **{email}**")
-            
-            # 🔥 NEW BEAUTIFUL WEBSITE DISPLAY
-            if website:
-                st.markdown(f"""
-                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            padding: 15px 25px; border-radius: 20px; margin: 10px 0; 
-                            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4); 
-                            border: 1px solid rgba(255,255,255,0.2);'>
-                    <a href='https://{website}' target='_blank' 
-                       style='color: white; text-decoration: none; font-weight: 700; 
-                              font-size: 16px; display: flex; align-items: center;'>
-                        🌐 <strong style='margin-left: 8px;'>{website}</strong> 
-                        <span style='margin-left: auto; font-size: 20px;'>🔗</span>
-                    </a>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
-                            padding: 15px 25px; border-radius: 20px; margin: 10px 0; 
-                            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.3); 
-                            border: 1px solid rgba(255,255,255,0.2); color: white; text-align: center;'>
-                    🌐 No website detected
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown(f"🌐 **{website}**")
 
         st.subheader("📞 Phones")
         for i, phone in enumerate(phones, 1):
@@ -302,6 +263,7 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
+# [Keep View Contacts and Raw Data same]
 elif menu == "View Contacts":
     st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
