@@ -45,22 +45,17 @@ def fix_domains(text):
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
 
-# -------- EXTRACT ALL PHONES --------
 def extract_phones(text):
-    # Find all phone numbers
     pattern = r'\+?[\d\s\-\(\)\.]{8,}'
     all_phones = re.findall(pattern, text)
     cleaned_phones = []
     
     for phone in all_phones:
-        # Clean each phone: keep digits + optional +
         clean_phone = re.sub(r'[^\d+]', '', phone)
-        if len(clean_phone) >= 10:  # Valid length
+        if len(clean_phone) >= 10:
             cleaned_phones.append(clean_phone)
     
-    # Remove duplicates
-    unique_phones = list(dict.fromkeys(cleaned_phones))
-    return unique_phones
+    return list(dict.fromkeys(cleaned_phones))  # Remove duplicates
 
 def extract_name(text):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -85,8 +80,8 @@ def extract_name(text):
 
 def extract_email(text):
     text = fix_domains(text)
-    match = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
-    return match[0] if match else ""
+    matches = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    return matches[0] if matches else ""
 
 def extract_website(text):
     text = fix_domains(text)
@@ -128,10 +123,10 @@ if menu == "Scan Card":
         st.subheader("Detected Text")
         st.text_area("", text, height=150)
 
-        # Extract details
+        # Extract details ONCE
         name = extract_name(text)
         email = extract_email(text)
-        phones = extract_phones(text)  # Get ALL phones
+        phones = extract_phones(text)
         website = extract_website(text)
         occupation = extract_occupation(text)
 
@@ -144,36 +139,45 @@ if menu == "Scan Card":
             st.write(f"📧 Email: {email}")
             st.write(f"🌐 Website: {website}")
         
-        # Show phones in list format
+        # Show phones
         st.subheader("📞 Phone Numbers")
         for i, phone in enumerate(phones, 1):
-            st.write(f"**Phone {i}:** {phone}")
+            st.success(f"Phone {i}: `{phone}`")
 
-        # Save ALL phones to Excel (one per row)
-        if phones:
-            for i, phone in enumerate(phones):
-                data = {
-                    "Name": [name],
-                    "Occupation": [occupation],
-                    "Email": [email],
-                    "Phone": [phone],
-                    "Website": [website]
-                }
-                df = pd.DataFrame(data)
-                if os.path.exists(FILE):
-                    old = pd.read_excel(FILE)
-                    new = pd.concat([old, df], ignore_index=True)
-                    new.to_excel(FILE, index=False)
+        # 🎯 FIXED: Create ONE row with ALL phones comma-separated
+        if name != "Name not found" and phones:
+            phone_column = ", ".join(phones)  # Phone 1, Phone 2 in ONE cell
+            
+            data = {
+                "Name": [name],
+                "Occupation": [occupation],
+                "Email": [email],
+                "Phone": [phone_column],  # ALL phones together
+                "Website": [website]
+            }
+            df_new = pd.DataFrame(data)
+            
+            # Check existing file and avoid duplicates
+            if os.path.exists(FILE):
+                df_old = pd.read_excel(FILE)
+                # Check if this exact contact (name+email) already exists
+                mask = (df_old['Name'].str.lower() == name.lower()) & (df_old['Email'].str.lower() == email.lower())
+                if not mask.any():
+                    df_final = pd.concat([df_old, df_new], ignore_index=True)
+                    df_final.to_excel(FILE, index=False)
+                    st.success(f"✅ Saved **{name}** with {len(phones)} phones! (1 row)")
                 else:
-                    df.to_excel(FILE, index=False)
-            st.success(f"✅ Saved {len(phones)} phone number(s) to Excel!")
+                    st.warning(f"⚠️ **{name}** already exists in contacts!")
+            else:
+                df_new.to_excel(FILE, index=False)
+                st.success(f"✅ First contact saved: **{name}** with {len(phones)} phones!")
         else:
-            st.warning("No valid phone numbers found")
+            st.error("❌ Missing name or phones - cannot save")
 
 if menu == "View Contacts":
     st.title("Saved Contacts")
     if os.path.exists(FILE):
         data = pd.read_excel(FILE)
-        st.dataframe(data)
+        st.dataframe(data, use_container_width=True)
     else:
         st.warning("No contacts saved yet")
