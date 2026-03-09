@@ -5,275 +5,348 @@ import pandas as pd
 import re
 import os
 import numpy as np
+import spacy
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
 FILE = "contacts.xlsx"
-menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts", "Raw Data"])
 
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Scan Card", "View Contacts", "Raw Data"]
+)
+
+# -------- LOAD OCR --------
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(['en'], gpu=False)
 
 reader = load_reader()
 
+# -------- LOAD NLP --------
+@st.cache_resource
+def load_nlp():
+    return spacy.load("en_core_web_sm")
+
+nlp = load_nlp()
+
+# -------- OCCUPATION GROUPS --------
 OCCUPATION_GROUPS = {
-    "👨‍💼 Management": ["manager", "director", "ceo", "cto", "cfo", "founder", "president", "vp", "head", "executive", "principal"],
-    "💻 Engineering": ["engineer", "developer", "software", "devops", "architect", "programmer", "backend", "frontend", "fullstack", "data engineer"],
-    "🎨 Design": ["designer", "ui", "ux", "graphic", "creative", "product designer", "visual"],
-    "📈 Sales & Marketing": ["sales", "marketing", "business development", "account", "digital marketing", "growth"],
-    "💼 Consulting": ["consultant", "advisor", "analyst", "strategy", "management consultant"],
-    "🔬 Research": ["scientist", "researcher"],
-    "🏥 Healthcare": ["doctor", "nurse", "physician", "dentist", "surgeon"],
-    "📱 Product": ["product manager", "pm", "product owner"],
-    "🎓 Education": ["teacher", "professor", "trainer", "coach"],
-    "⚖️ Legal": ["lawyer", "attorney", "legal"],
-    "🏦 Finance": ["accountant", "finance", "banker", "investor"],
-    "📊 Operations": ["operations", "hr", "human resources", "admin"],
+    "👨‍💼 Management": ["manager","director","ceo","cto","founder","president"],
+    "💻 Engineering": ["engineer","developer","software","architect"],
+    "🎨 Design": ["designer","ui","ux","graphic"],
+    "📈 Sales & Marketing": ["sales","marketing","growth"],
+    "💼 Consulting": ["consultant","advisor","analyst"],
+    "🏥 Healthcare": ["doctor","nurse","physician"],
+    "📱 Product": ["product manager"],
+    "🎓 Education": ["teacher","professor","trainer"],
+    "⚖️ Legal": ["lawyer","attorney"],
+    "🏦 Finance": ["accountant","finance","banker"],
+    "📊 Operations": ["operations","hr"],
     "🚀 Other": []
 }
 
 def categorize_occupation(occupation):
-    if not occupation or pd.isna(occupation):
+
+    if not occupation:
         return "🚀 Other"
-    occ_lower = str(occupation).lower()
-    for category, keywords in OCCUPATION_GROUPS.items():
-        for keyword in keywords:
-            if keyword in occ_lower:
-                return category
+
+    occ = occupation.lower()
+
+    for cat, keywords in OCCUPATION_GROUPS.items():
+        for k in keywords:
+            if k in occ:
+                return cat
+
     return "🚀 Other"
 
-def clean_email(email):
-    if not email:
-        return ""
-    email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
-    email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
-    email = re.sub(r'<[^>]+>', '', email)
-    return email.strip()
-
-def fix_website_text(text):
-    """🎯 FIX wwwethanroberts com → www.ethanroberts.com"""
-    # Fix missing dots: wwwname com → www.name.com
-    text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    # Fix wwwnamecom → www.name.com
-    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    # Fix extra spaces: www . name . com
-    text = re.sub(r'\s*\.\s*', '.', text)
-    return text
-
-def safe_load_contacts():
-    if not os.path.exists(FILE):
-        return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
-    
-    try:
-        df = pd.read_excel(FILE)
-        required_cols = ['Name', 'Occupation', 'Email', 'Phone', 'Website']
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = ""
-        if 'Category' not in df.columns:
-            df['Category'] = df['Occupation'].apply(categorize_occupation)
-        if 'Email' in df.columns:
-            df['Email'] = df['Email'].astype(str).apply(clean_email)
-        df = df.dropna(subset=['Name'])
-        return df
-    except:
-        return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
-
+# -------- IMAGE PREPROCESS --------
 def preprocess_image(image):
+
     image = image.convert("RGB")
     img = np.array(image)
-    height, width = img.shape[:2]
-    if width > 1200:
-        scale = 1200 / width
-        new_w = int(width * scale)
-        new_h = int(height * scale)
-        img = np.array(Image.fromarray(img).resize((new_w, new_h)))
+
+    h, w = img.shape[:2]
+
+    if w > 1200:
+        scale = 1200 / w
+        img = np.array(
+            Image.fromarray(img).resize((int(w*scale), int(h*scale)))
+        )
+
     return img
 
+# -------- OCR --------
 def extract_text(image):
+
     img = preprocess_image(image)
+
     result = reader.readtext(img, detail=0)
+
     return "\n".join(result)
 
-def extract_phones(text):
-    pattern = r'\+?[\d\s\-\(\)\.]{8,}'
-    all_phones = re.findall(pattern, text)
-    cleaned_phones = []
-    for phone in all_phones:
-        clean_phone = re.sub(r'[^\d+]', '', phone)
-        if len(clean_phone) >= 10:
-            cleaned_phones.append(clean_phone)
-    return list(dict.fromkeys(cleaned_phones))
+# -------- EMAIL --------
+def extract_email(text):
 
+    match = re.findall(
+        r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
+        text
+    )
+
+    return match[0] if match else ""
+
+# -------- PHONE --------
+def extract_phone(text):
+
+    phones = re.findall(r'\+?\d[\d\s\-]{8,}', text)
+
+    clean = []
+
+    for p in phones:
+        p = re.sub(r'[^\d+]', '', p)
+        if len(p) >= 10:
+            clean.append(p)
+
+    return list(dict.fromkeys(clean))
+
+# -------- WEBSITE --------
+def extract_website(text):
+
+    pattern = r'((?:www\.)?[a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
+
+    match = re.findall(pattern, text)
+
+    if match:
+
+        site = match[0]
+
+        if not site.startswith("www"):
+            site = "www." + site
+
+        return site
+
+    return ""
+
+# -------- LINKEDIN --------
+def extract_linkedin(text):
+
+    match = re.findall(
+        r'(linkedin\.com\/[A-Za-z0-9\/\-]+)',
+        text,
+        re.IGNORECASE
+    )
+
+    if match:
+        return "https://" + match[0]
+
+    return ""
+
+# -------- ADDRESS --------
+def extract_address(text):
+
+    lines = text.split("\n")
+
+    for line in lines:
+
+        if re.search(r'\d{5,6}', line):
+            return line
+
+    return ""
+
+# -------- NAME (NLP) --------
 def extract_name(text):
+
+    doc = nlp(text)
+
+    for ent in doc.ents:
+
+        if ent.label_ == "PERSON":
+
+            return ent.text
+
     lines = [l.strip() for l in text.split("\n") if l.strip()]
-    for line in lines[:5]:
+
+    for line in lines[:3]:
+
         words = line.split()
-        caps_words = [w for w in words if w and w[0].isupper()]
-        if len(caps_words) >= 2:
-            return " ".join(caps_words[:2])
+
+        if len(words) >= 2:
+            return words[0] + " " + words[1]
+
     return "Name not found"
 
-def extract_email(text):
-    # Clean website text first for better email detection
-    text = fix_website_text(text)
-    matches = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
-    if matches:
-        return clean_email(matches[0])
+# -------- COMPANY --------
+def extract_company(text):
+
+    doc = nlp(text)
+
+    for ent in doc.ents:
+
+        if ent.label_ == "ORG":
+
+            return ent.text
+
     return ""
 
-def extract_website(text):
-    # 🎯 CRITICAL FIX: Clean website text FIRST
-    text = fix_website_text(text)
-    
-    # Multiple patterns for websites
-    patterns = [
-        r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
-        r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
-        r'([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
-    ]
-    
-    for pattern in patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        if matches:
-            site = matches[0]
-            if not site.startswith(('http://', 'https://', 'www.')):
-                site = 'www.' + site
-            return site
-    
-    return ""
-
+# -------- OCCUPATION --------
 def extract_occupation(text):
+
     keywords = sum(OCCUPATION_GROUPS.values(), [])
+
     for line in text.split("\n"):
-        for key in keywords:
-            if key in line.lower():
-                return line.strip()
+        for k in keywords:
+            if k in line.lower():
+                return line
+
     return ""
+
+# -------- LOAD CONTACTS --------
+def load_contacts():
+
+    if os.path.exists(FILE):
+        return pd.read_excel(FILE)
+
+    return pd.DataFrame(
+        columns=["Name","Company","Occupation","Category","Email","Phone","Website"]
+    )
 
 # -------- SCAN CARD --------
 if menu == "Scan Card":
+
     st.title("AI Business Card Scanner")
-    option = st.radio("Choose Input Method", ["Upload Image", "Use Camera"])
+
+    option = st.radio(
+        "Choose Input Method",
+        ["Upload Image","Use Camera"]
+    )
 
     image = None
+
     if option == "Upload Image":
-        uploaded = st.file_uploader("Upload Business Card", type=["jpg","png","jpeg"])
+
+        uploaded = st.file_uploader(
+            "Upload Business Card",
+            type=["jpg","png","jpeg"]
+        )
+
         if uploaded:
             image = Image.open(uploaded)
+
     if option == "Use Camera":
+
         cam = st.camera_input("Take Photo")
+
         if cam:
             image = Image.open(cam)
 
     if image is not None:
-        st.image(image, caption="Business Card", use_column_width=True)
+
+        st.image(image, use_column_width=True)
+
         text = extract_text(image)
+
         st.subheader("Detected Text")
+
         st.text_area("", text, height=150)
 
         name = extract_name(text)
         email = extract_email(text)
-        phones = extract_phones(text)
-        website = extract_website(text)  # NOW FIXED!
-        raw_occupation = extract_occupation(text)
-        category = categorize_occupation(raw_occupation)
+        phones = extract_phone(text)
+        website = extract_website(text)
+        linkedin = extract_linkedin(text)
+        address = extract_address(text)
+        company = extract_company(text)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.success(f"👤 **{name}**")
-            st.write(f"💼 {raw_occupation}")
-            st.info(f"🏷️ {category}")
-        with col2:
-            st.markdown(f"📧 **{email}**")
-            st.markdown(f"🌐 **{website}**")
+        occupation = extract_occupation(text)
 
-        st.subheader("📞 Phones")
-        for i, phone in enumerate(phones, 1):
-            st.success(f"Phone {i}: `{phone}`")
+        category = categorize_occupation(occupation)
 
-        if name != "Name not found" and phones:
-            df = safe_load_contacts()
-            mask = (df['Name'].str.lower() == name.lower()) & (df['Email'].str.lower() == email.lower())
-            if df.empty or not mask.any():
-                new_row = pd.DataFrame([{
-                    'Name': name, 'Occupation': raw_occupation, 'Category': category,
-                    'Email': email, 'Phone': ', '.join(phones), 'Website': website
-                }])
-                df_final = pd.concat([df, new_row], ignore_index=True)
-                df_final.to_excel(FILE, index=False)
-                st.success(f"✅ Saved **{name}** ({category})")
-            else:
-                st.info(f"ℹ️ **{name}** exists!")
+        st.success(f"👤 {name}")
 
-# -------- VIEW CONTACTS (unchanged) --------
+        st.write("🏢 Company:", company)
+        st.write("💼 Occupation:", occupation)
+        st.write("🏷️ Category:", category)
+        st.write("📧 Email:", email)
+        st.write("🌐 Website:", website)
+        st.write("🔗 LinkedIn:", linkedin)
+        st.write("📍 Address:", address)
+
+        for i, p in enumerate(phones,1):
+            st.write(f"📞 Phone {i}:", p)
+
+        if name != "Name not found":
+
+            df = load_contacts()
+
+            new_row = pd.DataFrame([{
+                "Name":name,
+                "Company":company,
+                "Occupation":occupation,
+                "Category":category,
+                "Email":email,
+                "Phone":", ".join(phones),
+                "Website":website
+            }])
+
+            df = pd.concat([df,new_row],ignore_index=True)
+
+            df.to_excel(FILE,index=False)
+
+            st.success("Contact saved!")
+
+# -------- VIEW CONTACTS --------
 elif menu == "View Contacts":
-    st.title("🎯 Contacts Dashboard")
-    df = safe_load_contacts()
-    
-    if not df.empty:
-        df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.sidebar.subheader("🔍 Search")
-            search_term = st.sidebar.text_input("Search names/emails:")
-            
-            st.sidebar.subheader("🏷️ Category Filter")
-            categories = sorted(df_unique['Category'].unique())
-            selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
-        
-        filtered_df = df_unique
-        
-        if search_term:
-            mask = (
-                df_unique['Name'].str.contains(search_term, case=False, na=False) |
-                df_unique['Email'].str.contains(search_term, case=False, na=False)
-            )
-            filtered_df = filtered_df[mask]
-        
-        if selected_category != "All":
-            filtered_df = filtered_df[filtered_df['Category'] == selected_category]
-        
-        col_stats1, col_stats2 = st.columns(2)
-        with col_stats1:
-            st.metric("📊 Total Contacts", len(df_unique))
-        with col_stats2:
-            st.metric("🔍 Filtered Results", len(filtered_df))
-        
-        if not filtered_df.empty:
-            cat_counts = filtered_df['Category'].value_counts()
-            st.subheader("📈 Contacts by Category")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                for cat, count in cat_counts.head(6).items():
-                    st.markdown(f"**{cat}**: {count}")
-            with col2:
-                remaining = len(filtered_df) - cat_counts.head(6).sum()
-                if remaining > 0:
-                    st.markdown(f"**Others**: {remaining}")
-            
-            for _, row in filtered_df.iterrows():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**👤 {row['Name']}**")
-                    st.caption(f"💼 {row['Occupation']} | 🏷️ {row['Category']}")
-                    st.caption(f"📧 {row['Email']}")
-                with col2:
-                    phones_count = len(str(row['Phone']).split(', '))
-                    st.caption(f"📞 **{phones_count}** phones")
-                st.markdown("─" * 50)
-        else:
-            st.info("🔍 No matches found")
-    else:
-        st.warning("👆 Scan some cards first!")
 
-elif menu == "Raw Data":
-    st.title("📋 Raw Data")
-    df = safe_load_contacts()
+    st.title("Contacts Dashboard")
+
+    df = load_contacts()
+
     if not df.empty:
-        st.dataframe(df, use_container_width=True)
+
+        st.metric("Total Contacts",len(df))
+
+        cat_counts = df["Category"].value_counts()
+
+        st.bar_chart(cat_counts)
+
+        search = st.sidebar.text_input("Search")
+
+        if search:
+            df = df[df["Name"].str.contains(search,case=False,na=False)]
+
+        for i,row in df.iterrows():
+
+            st.markdown(f"### 👤 {row['Name']}")
+
+            st.write("🏢",row["Company"])
+            st.write("💼",row["Occupation"])
+            st.write("📧",row["Email"])
+            st.write("📞",row["Phone"])
+            st.write("🌐",row["Website"])
+
+            if st.button(f"Delete {row['Name']}"):
+                df = df[df["Name"] != row["Name"]]
+                df.to_excel(FILE,index=False)
+                st.experimental_rerun()
+
+        csv = df.to_csv(index=False)
+
+        st.download_button(
+            "Download Contacts CSV",
+            csv,
+            "contacts.csv",
+            "text/csv"
+        )
+
     else:
-        st.warning("No data yet")
+
+        st.warning("Scan cards first")
+
+# -------- RAW DATA --------
+elif menu == "Raw Data":
+
+    st.title("Raw Data")
+
+    df = load_contacts()
+
+    st.dataframe(df)
