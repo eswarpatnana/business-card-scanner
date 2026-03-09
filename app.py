@@ -7,88 +7,7 @@ import os
 import numpy as np
 
 
-import streamlit as st
-
-st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
-
-st.markdown("""
-<style>
-
-/* ---------- GLOBAL ---------- */
-.stApp {
-    background: linear-gradient(120deg,#0f172a,#1e293b);
-    color: white;
-    font-family: 'Segoe UI', sans-serif;
-}
-
-/* ---------- NAVBAR TITLE ---------- */
-.main-title {
-    text-align:center;
-    font-size:42px;
-    font-weight:700;
-    color:#38bdf8;
-    margin-bottom:5px;
-}
-
-.subtitle {
-    text-align:center;
-    color:#94a3b8;
-    margin-bottom:30px;
-}
-
-/* ---------- CARD STYLE ---------- */
-.card {
-    background:#1e293b;
-    padding:20px;
-    border-radius:16px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.4);
-    margin-bottom:15px;
-}
-
-/* ---------- BUTTONS ---------- */
-.stButton>button {
-    background:#38bdf8;
-    color:black;
-    border-radius:10px;
-    font-weight:600;
-    padding:10px 20px;
-    border:none;
-}
-
-.stButton>button:hover {
-    background:#0ea5e9;
-}
-
-/* ---------- METRIC CARDS ---------- */
-.metric-card {
-    background:#020617;
-    padding:20px;
-    border-radius:14px;
-    text-align:center;
-    box-shadow:0 5px 18px rgba(0,0,0,0.3);
-}
-
-/* ---------- SIDEBAR ---------- */
-section[data-testid="stSidebar"] {
-    background:#020617;
-}
-
-/* ---------- CONTACT GRID ---------- */
-.contact-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-    gap:15px;
-}
-
-.contact-box {
-    background:#1e293b;
-    padding:18px;
-    border-radius:14px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.35);
-}
-
-</style>
-""", unsafe_allow_html=True)
+ 
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
@@ -486,4 +405,5 @@ elif menu == "Raw Database":
     df = load_contacts()
 
     st.dataframe(df)
+
 
