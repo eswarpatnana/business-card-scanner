@@ -6,30 +6,77 @@ import re
 import os
 import numpy as np
 
-
- 
-
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
 DATA_FILE = "contacts.xlsx"
 
-menu = st.sidebar.selectbox(
-    "Navigation",
-    [
-        "Scan Cards",
-        "Contacts Dashboard",
-        "Analytics",
-        "Export Data",
-        "Raw Database"
-    ]
+# ---------- UI STYLE ----------
+st.markdown("""
+<style>
+
+.stApp {
+background: linear-gradient(120deg,#0f172a,#1e293b);
+color:white;
+}
+
+.main-title{
+text-align:center;
+font-size:42px;
+font-weight:bold;
+color:#38bdf8;
+}
+
+.subtitle{
+text-align:center;
+color:#94a3b8;
+margin-bottom:30px;
+}
+
+.contact-card{
+background:#1e293b;
+padding:18px;
+border-radius:14px;
+box-shadow:0 4px 12px rgba(0,0,0,0.35);
+margin-bottom:12px;
+}
+
+.stButton>button{
+background:#38bdf8;
+color:black;
+border-radius:10px;
+font-weight:bold;
+}
+
+section[data-testid="stSidebar"]{
+background:#020617;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- HEADER ----------
+st.markdown(
+"<div class='main-title'>📇 AI Business Card Scanner</div>",
+unsafe_allow_html=True
 )
 
+st.markdown(
+"<div class='subtitle'>Scan cards → Extract contacts → Build your network</div>",
+unsafe_allow_html=True
+)
+
+# ---------- MENU ----------
+menu = st.sidebar.radio(
+"Navigation",
+["Scan Cards","Dashboard","Export","Raw Data"]
+)
+
+# ---------- LOAD OCR ----------
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(['en'], gpu=False)
 
 reader = load_reader()
-
 
 # ---------- IMAGE PREPROCESS ----------
 def preprocess_image(image):
@@ -47,7 +94,6 @@ def preprocess_image(image):
 
     return img
 
-
 # ---------- OCR ----------
 def extract_text(image):
 
@@ -56,7 +102,6 @@ def extract_text(image):
     result = reader.readtext(img, detail=0)
 
     return "\n".join(result)
-
 
 # ---------- EMAIL ----------
 def detect_email(text):
@@ -67,7 +112,6 @@ def detect_email(text):
     )
 
     return match[0] if match else ""
-
 
 # ---------- PHONE ----------
 def detect_phones(text):
@@ -84,7 +128,6 @@ def detect_phones(text):
             clean.append(p)
 
     return list(dict.fromkeys(clean))
-
 
 # ---------- WEBSITE ----------
 def detect_website(text):
@@ -104,33 +147,6 @@ def detect_website(text):
 
     return ""
 
-
-# ---------- LINKEDIN ----------
-def detect_linkedin(text):
-
-    match = re.findall(
-        r'(linkedin\.com\/[A-Za-z0-9\/\-]+)',
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        return "https://" + match[0]
-
-    return ""
-
-
-# ---------- ADDRESS ----------
-def detect_address(text):
-
-    for line in text.split("\n"):
-
-        if re.search(r'\d{5,6}', line):
-            return line
-
-    return ""
-
-
 # ---------- NAME ----------
 def detect_name(text):
 
@@ -148,14 +164,10 @@ def detect_name(text):
 
     return "Unknown"
 
-
 # ---------- COMPANY ----------
 def detect_company(text):
 
-    keywords = [
-        "inc","ltd","solutions",
-        "technologies","company","corp"
-    ]
+    keywords = ["inc","ltd","solutions","technologies","corp","company"]
 
     for line in text.split("\n"):
 
@@ -167,36 +179,7 @@ def detect_company(text):
 
     return ""
 
-
-# ---------- CONTACT SUMMARY ----------
-def contact_summary(name, company, email, phones, website):
-
-    return f"""
-Name: {name}
-Company: {company}
-
-Email: {email}
-Phone: {", ".join(phones)}
-
-Website: {website}
-"""
-
-
-# ---------- VCARD ----------
-def generate_vcard(name, phone, email, company):
-
-    return f"""
-BEGIN:VCARD
-VERSION:3.0
-FN:{name}
-ORG:{company}
-TEL:{phone}
-EMAIL:{email}
-END:VCARD
-"""
-
-
-# ---------- LOAD DATABASE ----------
+# ---------- LOAD CONTACTS ----------
 def load_contacts():
 
     if os.path.exists(DATA_FILE):
@@ -204,69 +187,42 @@ def load_contacts():
         return pd.read_excel(DATA_FILE)
 
     return pd.DataFrame(
-        columns=[
-            "Name","Company",
-            "Email","Phone","Website"
-        ]
+        columns=["Name","Company","Email","Phone","Website"]
     )
-
-
-# ---------- DUPLICATE CHECK ----------
-def is_duplicate(df,name,email):
-
-    if df.empty:
-        return False
-
-    mask = (
-        (df["Name"].str.lower()==name.lower()) &
-        (df["Email"].str.lower()==email.lower())
-    )
-
-    return mask.any()
-
 
 # ---------- SAVE CONTACT ----------
 def save_contact(name,company,email,phones,website):
 
     df = load_contacts()
 
-    if not is_duplicate(df,name,email):
+    new = pd.DataFrame([{
+        "Name":name,
+        "Company":company,
+        "Email":email,
+        "Phone":", ".join(phones),
+        "Website":website
+    }])
 
-        new = pd.DataFrame([{
-            "Name":name,
-            "Company":company,
-            "Email":email,
-            "Phone":", ".join(phones),
-            "Website":website
-        }])
+    df = pd.concat([df,new],ignore_index=True)
 
-        df = pd.concat([df,new],ignore_index=True)
+    df.to_excel(DATA_FILE,index=False)
 
-        df.to_excel(DATA_FILE,index=False)
-
-        return True
-
-    return False
-
-
-# ---------- SCAN CARDS ----------
+# ---------- SCAN ----------
 if menu == "Scan Cards":
 
-    st.title("AI Business Card Scanner")
-
     option = st.radio(
-        "Input Method",
-        ["Upload Images","Use Camera"]
+    "Input Method",
+    ["Upload Image","Use Camera"]
     )
 
     images = []
 
-    if option == "Upload Images":
+    if option == "Upload Image":
 
         files = st.file_uploader(
-            "Upload Cards",
-            type=["jpg","png","jpeg"],
-            accept_multiple_files=True
+        "Upload cards",
+        type=["jpg","png","jpeg"],
+        accept_multiple_files=True
         )
 
         if files:
@@ -274,12 +230,12 @@ if menu == "Scan Cards":
 
     if option == "Use Camera":
 
-        cam = st.camera_input("Take Photo")
+        cam = st.camera_input("Take photo")
 
         if cam:
             images = [cam]
 
-    for file in images:
+    for i,file in enumerate(images):
 
         image = Image.open(file)
 
@@ -287,98 +243,87 @@ if menu == "Scan Cards":
 
         text = extract_text(image)
 
-        st.text_area("Detected Text",text)
-
         name = detect_name(text)
         email = detect_email(text)
         phones = detect_phones(text)
         website = detect_website(text)
         company = detect_company(text)
-        linkedin = detect_linkedin(text)
-        address = detect_address(text)
 
-        st.success(f"👤 {name}")
+        st.markdown(
+        f"""
+        <div class='contact-card'>
 
-        st.write("🏢",company)
-        st.write("📧",email)
-        st.write("🌐",website)
-        st.write("🔗",linkedin)
-        st.write("📍",address)
+        <h4>👤 {name}</h4>
 
-        for p in phones:
-            st.write("📞",p)
+        🏢 {company}  
+        📧 {email}  
+        📞 {", ".join(phones)}  
+        🌐 {website}
 
-        summary = contact_summary(name,company,email,phones,website)
-
-        st.subheader("Contact Summary")
-
-        st.text(summary)
-
-        vcard = generate_vcard(name,", ".join(phones),email,company)
-
-        st.download_button(
-            "Download Contact",
-            vcard,
-            file_name="contact.vcf"
+        </div>
+        """,
+        unsafe_allow_html=True
         )
 
-        saved = save_contact(name,company,email,phones,website)
+        save_contact(name,company,email,phones,website)
 
-        if saved:
-            st.success("Contact saved!")
-        else:
-            st.warning("Duplicate contact")
+        st.download_button(
+        "Download Contact",
+        data=f"{name} {email}",
+        file_name="contact.txt",
+        key=f"download_{i}"
+        )
 
+        st.success("Contact saved!")
 
 # ---------- DASHBOARD ----------
-elif menu == "Contacts Dashboard":
-
-    st.title("Contacts Dashboard")
+elif menu == "Dashboard":
 
     df = load_contacts()
 
     if not df.empty:
 
-        st.metric("Total Contacts",len(df))
+        col1,col2,col3 = st.columns(3)
 
-        search = st.sidebar.text_input("Search")
+        col1.metric("Total Contacts",len(df))
+        col2.metric("Companies",df["Company"].nunique())
+        col3.metric("Emails",df["Email"].count())
+
+        search = st.text_input("Search")
 
         if search:
 
             df = df[
-                df["Name"].str.contains(search,case=False,na=False) |
-                df["Email"].str.contains(search,case=False,na=False)
+            df["Name"].str.contains(search,case=False,na=False) |
+            df["Email"].str.contains(search,case=False,na=False)
             ]
 
-        st.dataframe(df)
+        for _,row in df.iterrows():
+
+            st.markdown(
+            f"""
+            <div class='contact-card'>
+
+            <h4>👤 {row['Name']}</h4>
+
+            🏢 {row['Company']}  
+            📧 {row['Email']}  
+            📞 {row['Phone']}  
+            🌐 {row['Website']}
+
+            </div>
+            """,
+            unsafe_allow_html=True
+            )
+
+        st.bar_chart(df["Company"].value_counts())
 
     else:
 
         st.warning("No contacts yet")
 
-
-# ---------- ANALYTICS ----------
-elif menu == "Analytics":
-
-    st.title("Contact Analytics")
-
-    df = load_contacts()
-
-    if not df.empty:
-
-        st.bar_chart(df["Company"].value_counts())
-
-        st.line_chart(df.index)
-
-    else:
-
-        st.warning("No data")
-
-
 # ---------- EXPORT ----------
-elif menu == "Export Data":
-
-    st.title("Export Contacts")
+elif menu == "Export":
 
     df = load_contacts()
 
@@ -387,23 +332,18 @@ elif menu == "Export Data":
         csv = df.to_csv(index=False)
 
         st.download_button(
-            "Download CSV",
-            csv,
-            "contacts.csv"
+        "Download CSV",
+        csv,
+        "contacts.csv"
         )
 
     else:
 
         st.warning("No contacts")
 
-
-# ---------- RAW DATABASE ----------
-elif menu == "Raw Database":
-
-    st.title("Raw Data")
+# ---------- RAW ----------
+elif menu == "Raw Data":
 
     df = load_contacts()
 
     st.dataframe(df)
-
-
