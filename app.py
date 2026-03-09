@@ -9,7 +9,7 @@ import numpy as np
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
 FILE = "contacts.xlsx"
-menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts", "Occupation Filter"])
+menu = st.sidebar.selectbox("Menu", ["Scan Card", "View Contacts", "Raw Data"])
 
 @st.cache_resource
 def load_reader():
@@ -17,26 +17,43 @@ def load_reader():
 
 reader = load_reader()
 
-# -------- OCCUPATION CATEGORIES --------
 OCCUPATION_GROUPS = {
     "👨‍💼 Management": ["manager", "director", "ceo", "cto", "founder", "president", "vp", "head"],
     "💻 Engineering": ["engineer", "developer", "software", "devops", "architect", "programmer"],
     "🎨 Design": ["designer", "ui", "ux", "graphic", "creative"],
     "📈 Sales & Marketing": ["sales", "marketing", "business development", "account"],
     "💼 Consulting": ["consultant", "advisor", "analyst"],
-    "🔬 Research": ["scientist", "researcher", "analyst"],
+    "🔬 Research": ["scientist", "researcher"],
     "📱 Other": []
 }
 
 def categorize_occupation(occupation):
-    if not occupation:
+    if not occupation or pd.isna(occupation):
         return "📱 Other"
-    occ_lower = occupation.lower()
+    occ_lower = str(occupation).lower()
     for category, keywords in OCCUPATION_GROUPS.items():
         for keyword in keywords:
             if keyword in occ_lower:
                 return category
     return "📱 Other"
+
+def safe_load_contacts():
+    if not os.path.exists(FILE):
+        return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
+    
+    try:
+        df = pd.read_excel(FILE)
+        required_cols = ['Name', 'Occupation', 'Email', 'Phone', 'Website']
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = ""
+        if 'Category' not in df.columns:
+            df['Category'] = df['Occupation'].apply(categorize_occupation)
+        df = df.dropna(subset=['Name'])
+        return df
+    except:
+        st.error("❌ Corrupted file. Starting fresh.")
+        return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
 def preprocess_image(image):
     image = image.convert("RGB")
@@ -56,10 +73,8 @@ def extract_text(image):
 
 def fix_domains(text):
     patterns = [
-        (r'([a-z]+)com', r'\1.com'),
-        (r'([a-z]+)org', r'\1.org'),
-        (r'([a-z]+)net', r'\1.net'),
-        (r'([a-z]+)co(?=[^a-z])', r'\1.co'),
+        (r'([a-z]+)com', r'\1.com'), (r'([a-z]+)org', r'\1.org'),
+        (r'([a-z]+)net', r'\1.net'), (r'([a-z]+)co(?=[^a-z])', r'\1.co'),
         (r'([a-z]+)in(?=[^a-z])', r'\1.in'),
     ]
     for pattern, replacement in patterns:
@@ -83,14 +98,6 @@ def extract_name(text):
         caps_words = [w for w in words if w and w[0].isupper()]
         if len(caps_words) >= 2:
             return " ".join(caps_words[:2])
-    for line in lines:
-        words = line.split()
-        if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper():
-            return f"{words[0]} {words[1]}"
-    for line in lines:
-        words = line.split()
-        if len(words) >= 2:
-            return " ".join(words[:2])
     return "Name not found"
 
 def extract_email(text):
@@ -116,22 +123,6 @@ def extract_occupation(text):
                 return line.strip()
     return ""
 
-# -------- SAFE DATAFRAME HANDLING --------
-def safe_load_excel():
-    """Load Excel safely and add missing columns"""
-    if os.path.exists(FILE):
-        try:
-            df = pd.read_excel(FILE)
-            # Add Category column if missing
-            if 'Category' not in df.columns:
-                df['Category'] = df['Occupation'].apply(categorize_occupation)
-                df.to_excel(FILE, index=False)
-            return df
-        except:
-            # If corrupted, start fresh
-            return pd.DataFrame()
-    return pd.DataFrame()
-
 # -------- SCAN CARD --------
 if menu == "Scan Card":
     st.title("AI Business Card Scanner")
@@ -150,7 +141,6 @@ if menu == "Scan Card":
     if image is not None:
         st.image(image, caption="Business Card", use_column_width=True)
         text = extract_text(image)
-        
         st.subheader("Detected Text")
         st.text_area("", text, height=150)
 
@@ -161,10 +151,70 @@ if menu == "Scan Card":
         raw_occupation = extract_occupation(text)
         category = categorize_occupation(raw_occupation)
 
-        st.subheader("Detected Details")
         col1, col2 = st.columns(2)
         with col1:
-            st.success(f"👤 Name: **{name}**")
-            st.write(f"💼 Occupation: {raw_occupation}")
-            st.info(f"🏷️ **Category:** {category}")
+            st.success(f"👤 **{name}**")
+            st.write(f"💼 {raw_occupation}")
+            st.info(f"🏷️ {category}")
         with col2:
+            st.write(f"📧 {email}")
+            st.write(f"🌐 {website}")
+
+        st.subheader("📞 Phones")
+        for i, phone in enumerate(phones, 1):
+            st.success(f"Phone {i}: `{phone}`")
+
+        if name != "Name not found" and phones:
+            df = safe_load_contacts()
+            mask = (df['Name'].str.lower() == name.lower()) & (df['Email'].str.lower() == email.lower())
+            if df.empty or not mask.any():
+                new_row = pd.DataFrame([{
+                    'Name': name, 'Occupation': raw_occupation, 'Category': category,
+                    'Email': email, 'Phone': ', '.join(phones), 'Website': website
+                }])
+                df_final = pd.concat([df, new_row], ignore_index=True)
+                df_final.to_excel(FILE, index=False)
+                st.success(f"✅ Saved **{name}** ({category})")
+            else:
+                st.info(f"ℹ️ **{name}** exists!")
+
+# -------- VIEW CONTACTS --------
+elif menu == "View Contacts":
+    st.title("🎯 Contacts by Occupation")
+    df = safe_load_contacts()
+    
+    if not df.empty:
+        df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
+        
+        st.sidebar.subheader("🔍 Filter")
+        categories = sorted(df_unique['Category'].unique().tolist())
+        selected_category = st.sidebar.selectbox("Category:", ["All"] + categories)
+        
+        if selected_category == "All":
+            st.dataframe(df_unique, use_container_width=True)
+            st.success(f"📊 {len(df_unique)} unique contacts")
+        else:
+            filtered = df_unique[df_unique['Category'] == selected_category]
+            if not filtered.empty:
+                st.success(f"👥 {len(filtered)} {selected_category} contacts")
+                for _, row in filtered.iterrows():
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**👤 {row['Name']}** - {row['Occupation']}")
+                        st.caption(f"📧 {row['Email']}")
+                    with col2:
+                        st.caption(f"📞 {len(str(row['Phone']).split(', '))} phones")
+                    st.markdown("─" * 50)
+            else:
+                st.info("No contacts found")
+    else:
+        st.warning("👆 Scan some cards first!")
+
+# -------- RAW DATA --------
+elif menu == "Raw Data":
+    st.title("📋 Raw Data")
+    df = safe_load_contacts()
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.warning("No data yet")
