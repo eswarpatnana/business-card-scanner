@@ -55,7 +55,7 @@ def extract_phones(text):
         if len(clean_phone) >= 10:
             cleaned_phones.append(clean_phone)
     
-    return list(dict.fromkeys(cleaned_phones))  # Remove duplicates
+    return list(dict.fromkeys(cleaned_phones))
 
 def extract_name(text):
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -123,7 +123,6 @@ if menu == "Scan Card":
         st.subheader("Detected Text")
         st.text_area("", text, height=150)
 
-        # Extract details ONCE
         name = extract_name(text)
         email = extract_email(text)
         phones = extract_phones(text)
@@ -139,45 +138,50 @@ if menu == "Scan Card":
             st.write(f"📧 Email: {email}")
             st.write(f"🌐 Website: {website}")
         
-        # Show phones
         st.subheader("📞 Phone Numbers")
         for i, phone in enumerate(phones, 1):
             st.success(f"Phone {i}: `{phone}`")
 
-        # 🎯 FIXED: Create ONE row with ALL phones comma-separated
+        # Save ONE row only
         if name != "Name not found" and phones:
-            phone_column = ", ".join(phones)  # Phone 1, Phone 2 in ONE cell
-            
+            phone_column = ", ".join(phones)
             data = {
                 "Name": [name],
                 "Occupation": [occupation],
                 "Email": [email],
-                "Phone": [phone_column],  # ALL phones together
+                "Phone": [phone_column],
                 "Website": [website]
             }
             df_new = pd.DataFrame(data)
             
-            # Check existing file and avoid duplicates
             if os.path.exists(FILE):
                 df_old = pd.read_excel(FILE)
-                # Check if this exact contact (name+email) already exists
                 mask = (df_old['Name'].str.lower() == name.lower()) & (df_old['Email'].str.lower() == email.lower())
                 if not mask.any():
                     df_final = pd.concat([df_old, df_new], ignore_index=True)
                     df_final.to_excel(FILE, index=False)
-                    st.success(f"✅ Saved **{name}** with {len(phones)} phones! (1 row)")
+                    st.success(f"✅ Saved **{name}** with {len(phones)} phones!")
                 else:
-                    st.warning(f"⚠️ **{name}** already exists in contacts!")
+                    st.info(f"ℹ️ **{name}** already exists!")
             else:
                 df_new.to_excel(FILE, index=False)
-                st.success(f"✅ First contact saved: **{name}** with {len(phones)} phones!")
-        else:
-            st.error("❌ Missing name or phones - cannot save")
+                st.success(f"✅ First contact: **{name}**")
 
+# -------- VIEW CONTACTS (FIXED DUPLICATES) --------
 if menu == "View Contacts":
     st.title("Saved Contacts")
     if os.path.exists(FILE):
-        data = pd.read_excel(FILE)
-        st.dataframe(data, use_container_width=True)
+        df = pd.read_excel(FILE)
+        
+        # 🎯 REMOVE DUPLICATES - keep only FIRST occurrence of each Name+Email
+        df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
+        df_unique.to_excel(FILE, index=False)  # Update file with unique entries
+        
+        st.success(f"📊 Showing {len(df_unique)} unique contacts (removed {len(df)-len(df_unique)} duplicates)")
+        st.dataframe(df_unique, use_container_width=True)
+        
+        # Show duplicate count if any
+        if len(df) != len(df_unique):
+            st.info(f"🧹 Cleaned {len(df)-len(df_unique)} duplicate entries")
     else:
         st.warning("No contacts saved yet")
