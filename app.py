@@ -17,14 +17,13 @@ def load_reader():
 
 reader = load_reader()
 
-# -------- EXPANDED OCCUPATION CATEGORIES --------
 OCCUPATION_GROUPS = {
     "👨‍💼 Management": ["manager", "director", "ceo", "cto", "cfo", "founder", "president", "vp", "head", "executive", "principal"],
     "💻 Engineering": ["engineer", "developer", "software", "devops", "architect", "programmer", "backend", "frontend", "fullstack", "data engineer"],
     "🎨 Design": ["designer", "ui", "ux", "graphic", "creative", "product designer", "visual"],
     "📈 Sales & Marketing": ["sales", "marketing", "business development", "account", "digital marketing", "growth"],
     "💼 Consulting": ["consultant", "advisor", "analyst", "strategy", "management consultant"],
-    "🔬 Research": ["scientist", "researcher", "analyst", "data scientist"],
+    "🔬 Research": ["scientist", "researcher"],
     "🏥 Healthcare": ["doctor", "nurse", "physician", "dentist", "surgeon"],
     "📱 Product": ["product manager", "pm", "product owner"],
     "🎓 Education": ["teacher", "professor", "trainer", "coach"],
@@ -45,16 +44,22 @@ def categorize_occupation(occupation):
     return "🚀 Other"
 
 def clean_email(email):
-    """Fix www.email.com → email.com"""
     if not email:
         return ""
-    # Remove www. from email domains
     email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
-    # Remove markdown links [email](url)
     email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
-    # Strip hyperlinks
     email = re.sub(r'<[^>]+>', '', email)
     return email.strip()
+
+def fix_website_text(text):
+    """🎯 FIX wwwethanroberts com → www.ethanroberts.com"""
+    # Fix missing dots: wwwname com → www.name.com
+    text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    # Fix wwwnamecom → www.name.com
+    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    # Fix extra spaces: www . name . com
+    text = re.sub(r'\s*\.\s*', '.', text)
+    return text
 
 def safe_load_contacts():
     if not os.path.exists(FILE):
@@ -68,7 +73,6 @@ def safe_load_contacts():
                 df[col] = ""
         if 'Category' not in df.columns:
             df['Category'] = df['Occupation'].apply(categorize_occupation)
-        # Clean existing emails
         if 'Email' in df.columns:
             df['Email'] = df['Email'].astype(str).apply(clean_email)
         df = df.dropna(subset=['Name'])
@@ -76,7 +80,6 @@ def safe_load_contacts():
     except:
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
-# [All other extract functions remain same]
 def preprocess_image(image):
     image = image.convert("RGB")
     img = np.array(image)
@@ -92,16 +95,6 @@ def extract_text(image):
     img = preprocess_image(image)
     result = reader.readtext(img, detail=0)
     return "\n".join(result)
-
-def fix_domains(text):
-    patterns = [
-        (r'([a-z]+)com', r'\1.com'), (r'([a-z]+)org', r'\1.org'),
-        (r'([a-z]+)net', r'\1.net'), (r'([a-z]+)co(?=[^a-z])', r'\1.co'),
-        (r'([a-z]+)in(?=[^a-z])', r'\1.in'),
-    ]
-    for pattern, replacement in patterns:
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-    return text
 
 def extract_phones(text):
     pattern = r'\+?[\d\s\-\(\)\.]{8,}'
@@ -123,25 +116,36 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    text = fix_domains(text)
+    # Clean website text first for better email detection
+    text = fix_website_text(text)
     matches = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
     if matches:
-        clean_email_match = clean_email(matches[0])
-        return clean_email_match
+        return clean_email(matches[0])
     return ""
 
 def extract_website(text):
-    text = fix_domains(text)
-    match = re.findall(r'(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))', text)
-    if match:
-        site = match[0]
-        if not site.startswith("www"):
-            site = "www." + site
-        return site
+    # 🎯 CRITICAL FIX: Clean website text FIRST
+    text = fix_website_text(text)
+    
+    # Multiple patterns for websites
+    patterns = [
+        r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
+        r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
+        r'([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            site = matches[0]
+            if not site.startswith(('http://', 'https://', 'www.')):
+                site = 'www.' + site
+            return site
+    
     return ""
 
 def extract_occupation(text):
-    keywords = sum(OCCUPATION_GROUPS.values(), [])  # All keywords
+    keywords = sum(OCCUPATION_GROUPS.values(), [])
     for line in text.split("\n"):
         for key in keywords:
             if key in line.lower():
@@ -170,9 +174,9 @@ if menu == "Scan Card":
         st.text_area("", text, height=150)
 
         name = extract_name(text)
-        email = extract_email(text)  # Now cleaned!
+        email = extract_email(text)
         phones = extract_phones(text)
-        website = extract_website(text)
+        website = extract_website(text)  # NOW FIXED!
         raw_occupation = extract_occupation(text)
         category = categorize_occupation(raw_occupation)
 
@@ -182,8 +186,8 @@ if menu == "Scan Card":
             st.write(f"💼 {raw_occupation}")
             st.info(f"🏷️ {category}")
         with col2:
-            st.markdown(f"📧 **{email}**")  # Clean email display
-            st.write(f"🌐 {website}")
+            st.markdown(f"📧 **{email}**")
+            st.markdown(f"🌐 **{website}**")
 
         st.subheader("📞 Phones")
         for i, phone in enumerate(phones, 1):
@@ -203,7 +207,7 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
-# -------- VIEW CONTACTS WITH SEARCH --------
+# -------- VIEW CONTACTS (unchanged) --------
 elif menu == "View Contacts":
     st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
@@ -211,7 +215,6 @@ elif menu == "View Contacts":
     if not df.empty:
         df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
         
-        # 🎯 TWO-WAY FILTERING
         col1, col2 = st.columns(2)
         with col1:
             st.sidebar.subheader("🔍 Search")
@@ -221,7 +224,6 @@ elif menu == "View Contacts":
             categories = sorted(df_unique['Category'].unique())
             selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
         
-        # Filter data
         filtered_df = df_unique
         
         if search_term:
@@ -234,7 +236,6 @@ elif menu == "View Contacts":
         if selected_category != "All":
             filtered_df = filtered_df[filtered_df['Category'] == selected_category]
         
-        # Stats
         col_stats1, col_stats2 = st.columns(2)
         with col_stats1:
             st.metric("📊 Total Contacts", len(df_unique))
@@ -242,7 +243,6 @@ elif menu == "View Contacts":
             st.metric("🔍 Filtered Results", len(filtered_df))
         
         if not filtered_df.empty:
-            # Category breakdown
             cat_counts = filtered_df['Category'].value_counts()
             st.subheader("📈 Contacts by Category")
             
@@ -255,7 +255,6 @@ elif menu == "View Contacts":
                 if remaining > 0:
                     st.markdown(f"**Others**: {remaining}")
             
-            # Contact cards
             for _, row in filtered_df.iterrows():
                 col1, col2 = st.columns([3, 1])
                 with col1:
