@@ -2,6 +2,8 @@ streamlit
 easyocr
 pillow
 pandas
+numpy
 openpyxl
 torch
 torchvision
+spacy
