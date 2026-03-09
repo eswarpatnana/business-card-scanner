@@ -78,8 +78,8 @@ def categorize_occupation(occupation):
 def clean_email(email):
     if not email:
         return ""
-    email = re.sub(r'[([^]]+)]([^)]+)', r'\u0001', email)
-    email = re.sub(r'www.([a-zA-Z0-9.-]+.[a-zA-Z]{2,})', r'\u0001', email)
+    email = re.sub(r'[([^]]+)]([^)]+)', r'\\u0001', email)
+    email = re.sub(r'www.([a-zA-Z0-9.-]+.[a-zA-Z]{2,})', r'\\u0001', email)
     email = re.sub(r'<[^>]+>', '', email)
     return email.strip()
 
@@ -107,8 +107,7 @@ def extract_text(image):
     normal_result = reader.readtext(normal_img, detail=0)
     enhanced_result = reader.readtext(np.array(enhanced_img), detail=0)
     all_text = list(set(normal_result + enhanced_result))
-      return "
-".join(all_text)
+    return "\n".join(all_text)
 
 def preprocess_image(image):
     image = image.convert("RGB")
@@ -122,7 +121,7 @@ def preprocess_image(image):
     return img
 
 def extract_phones(text):
-    pattern = r'+?[ds-().]{8,}'
+    pattern = r'\+?[ds-().]{8,}'
     all_phones = re.findall(pattern, text)
     cleaned_phones = []
     for phone in all_phones:
@@ -132,8 +131,7 @@ def extract_phones(text):
     return list(dict.fromkeys(cleaned_phones))
 
 def extract_name(text):
-    lines = [l.strip() for l in text.split("
-") if l.strip() and len(l.strip()) > 1]
+    lines = [l.strip() for l in text.split("\n") if l.strip() and len(l.strip()) > 1]
     
     # Method 1: Look for lines with 2+ capitalized words (most common name pattern)
     for line in lines[:8]:  # Check first 8 lines
@@ -189,7 +187,7 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    text = re.sub(r'[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,})]([^)]*)', r'\u0001', text)
+    text = re.sub(r'[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,})]([^)]*)', r'\\u0001', text)
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
@@ -197,8 +195,8 @@ def extract_email(text):
     return ""
 
 def extract_website(text):
-    text = re.sub(r'(www)([a-zA-Z0-9]+)s+([a-zA-Z]{2,})', r'\u0001.\u0002.\u0003', text, flags=re.IGNORECASE)
-    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\u0001.\u0002.\u0003', text, flags=re.IGNORECASE)
+    text = re.sub(r'(www)([a-zA-Z0-9]+)s+([a-zA-Z]{2,})', r'\\u0001.\\u0002.\\u0003', text, flags=re.IGNORECASE)
+    text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\\u0001.\\u0002.\\u0003', text, flags=re.IGNORECASE)
     patterns = [
         r'(?:www.|https?://)?([a-zA-Z0-9-]+.(?:com|org|net|co|in|io|ai|edu|gov))',
         r'www.([a-zA-Z0-9-]+.[a-zA-Z]{2,})',
@@ -215,8 +213,7 @@ def extract_website(text):
 
 def extract_occupation(text):
     keywords = sum(OCCUPATION_GROUPS.values(), [])
-    for line in text.split("
-"):
+    for line in text.split("\n"):
         for key in keywords:
             if key in line.lower():
                 return line.strip()
@@ -355,4 +352,3 @@ elif menu == "Raw Data":
         st.dataframe(df, use_container_width=True)
     else:
         st.warning("No data yet")
-
