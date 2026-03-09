@@ -36,40 +36,23 @@ OCCUPATION_GROUPS = {
 }
 
 def enhance_for_handwriting(image):
-    """🎯 SUPERCHARGED HANDWRITING OCR PREPROCESSING"""
-    # Convert to OpenCV format
     img_array = np.array(image)
     img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-    
-    # 1. RESIZE for optimal DPI (300 DPI)
     height, width = img_cv.shape[:2]
     if width < 1200:
         scale = 1200 / width
         new_width = int(width * scale)
         new_height = int(height * scale)
         img_cv = cv2.resize(img_cv, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-    
-    # 2. GRAYSCALE
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    
-    # 3. NOISE REDUCTION (Gaussian + Median)
     denoised = cv2.GaussianBlur(gray, (3, 3), 0)
     denoised = cv2.medianBlur(denoised, 3)
-    
-    # 4. SHARPENING
     kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
     sharpened = cv2.filter2D(denoised, -1, kernel)
-    
-    # 5. ADAPTIVE THRESHOLDING (BEST FOR HANDWRITING)
-    thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                  cv2.THRESH_BINARY, 11, 2)
-    
-    # 6. MORPHOLOGICAL CLEANUP
+    thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
     kernel = np.ones((2,2), np.uint8)
     cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
     cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
-    
-    # 7. DESKEW (straighten tilted text)
     coords = np.column_stack(np.where(cleaned > 0))
     angle = cv2.minAreaRect(coords)[-1]
     if angle < -45:
@@ -79,12 +62,8 @@ def enhance_for_handwriting(image):
     (h, w) = cleaned.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    deskewed = cv2.warpAffine(cleaned, M, (w, h), flags=cv2.INTER_CUBIC, 
-                             borderMode=cv2.BORDER_REPLICATE)
-    
-    # Convert back to PIL
-    enhanced_img = Image.fromarray(deskewed)
-    return enhanced_img
+    deskewed = cv2.warpAffine(cleaned, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return Image.fromarray(deskewed)
 
 def categorize_occupation(occupation):
     if not occupation or pd.isna(occupation):
@@ -123,15 +102,10 @@ def safe_load_contacts():
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
 def extract_text(image):
-    # 🎯 DOUBLE OCR: Normal + Handwriting enhanced
     normal_img = preprocess_image(image)
     enhanced_img = enhance_for_handwriting(image)
-    
-    # OCR on both versions
     normal_result = reader.readtext(normal_img, detail=0)
     enhanced_result = reader.readtext(np.array(enhanced_img), detail=0)
-    
-    # Combine and deduplicate
     all_text = list(set(normal_result + enhanced_result))
     return "\n".join(all_text)
 
@@ -166,7 +140,6 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    # Handle markdown links FIRST
     text = re.sub(r'\[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\]\([^)]*\)', r'\1', text)
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
@@ -175,16 +148,13 @@ def extract_email(text):
     return ""
 
 def extract_website(text):
-    # Fix wwwname com → www.name.com
     text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
     text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
-    
     patterns = [
         r'(?:www\.|https?://)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai|edu|gov))',
         r'www\.([a-zA-Z0-9-]+\.[a-zA-Z]{2,})',
         r'([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))'
     ]
-    
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
@@ -223,7 +193,7 @@ if menu == "Scan Card":
             st.image(image, caption="📸 Original", use_column_width=True)
         with col2:
             enhanced = enhance_for_handwriting(image)
-            st.image(enhanced, caption="🧠 Enhanced for Handwriting", use_column_width=True)
+            st.image(enhanced, caption="🧠 Enhanced", use_column_width=True)
         
         text = extract_text(image)
         st.subheader("📄 Detected Text")
@@ -243,7 +213,31 @@ if menu == "Scan Card":
             st.info(f"🏷️ {category}")
         with col2:
             st.markdown(f"📧 **{email}**")
-            st.markdown(f"🌐 **{website}**")
+            
+            # 🔥 NEW BEAUTIFUL WEBSITE DISPLAY
+            if website:
+                st.markdown(f"""
+                <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            padding: 15px 25px; border-radius: 20px; margin: 10px 0; 
+                            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4); 
+                            border: 1px solid rgba(255,255,255,0.2);'>
+                    <a href='https://{website}' target='_blank' 
+                       style='color: white; text-decoration: none; font-weight: 700; 
+                              font-size: 16px; display: flex; align-items: center;'>
+                        🌐 <strong style='margin-left: 8px;'>{website}</strong> 
+                        <span style='margin-left: auto; font-size: 20px;'>🔗</span>
+                    </a>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                            padding: 15px 25px; border-radius: 20px; margin: 10px 0; 
+                            box-shadow: 0 10px 30px rgba(245, 87, 108, 0.3); 
+                            border: 1px solid rgba(255,255,255,0.2); color: white; text-align: center;'>
+                    🌐 No website detected
+                </div>
+                """, unsafe_allow_html=True)
 
         st.subheader("📞 Phones")
         for i, phone in enumerate(phones, 1):
@@ -263,7 +257,6 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
-# [Keep View Contacts and Raw Data same]
 elif menu == "View Contacts":
     st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
