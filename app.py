@@ -33,32 +33,6 @@ def extract_text(image):
     result = reader.readtext(img, detail=0)
     return "\n".join(result)
 
-# -------- IMPROVED NAME DETECTION --------
-def extract_name(text):
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    
-    # Method 1: First line with 2+ capitalized words (most common)
-    for line in lines[:5]:  # Check more lines
-        words = line.split()
-        caps_words = [w for w in words if w and w[0].isupper()]
-        if len(caps_words) >= 2:
-            return " ".join(caps_words[:2])
-    
-    # Method 2: Any line with 2+ words where first letters are uppercase
-    for line in lines:
-        words = line.split()
-        if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper():
-            return f"{words[0]} {words[1]}"
-    
-    # Method 3: First non-empty line with multiple words (fallback)
-    for line in lines:
-        words = line.split()
-        if len(words) >= 2:
-            return " ".join(words[:2])
-    
-    return "Name not found"
-
-# Keep your working functions
 def fix_domains(text):
     patterns = [
         (r'([a-z]+)com', r'\1.com'),
@@ -71,13 +45,47 @@ def fix_domains(text):
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
 
+# -------- EXTRACT ALL PHONES --------
+def extract_phones(text):
+    # Find all phone numbers
+    pattern = r'\+?[\d\s\-\(\)\.]{8,}'
+    all_phones = re.findall(pattern, text)
+    cleaned_phones = []
+    
+    for phone in all_phones:
+        # Clean each phone: keep digits + optional +
+        clean_phone = re.sub(r'[^\d+]', '', phone)
+        if len(clean_phone) >= 10:  # Valid length
+            cleaned_phones.append(clean_phone)
+    
+    # Remove duplicates
+    unique_phones = list(dict.fromkeys(cleaned_phones))
+    return unique_phones
+
+def extract_name(text):
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    
+    for line in lines[:5]:
+        words = line.split()
+        caps_words = [w for w in words if w and w[0].isupper()]
+        if len(caps_words) >= 2:
+            return " ".join(caps_words[:2])
+    
+    for line in lines:
+        words = line.split()
+        if len(words) >= 2 and words[0][0].isupper() and words[1][0].isupper():
+            return f"{words[0]} {words[1]}"
+    
+    for line in lines:
+        words = line.split()
+        if len(words) >= 2:
+            return " ".join(words[:2])
+    
+    return "Name not found"
+
 def extract_email(text):
     text = fix_domains(text)
     match = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
-    return match[0] if match else ""
-
-def extract_phone(text):
-    match = re.findall(r'\+?[\d\s\-]{8,}', text)
     return match[0] if match else ""
 
 def extract_website(text):
@@ -120,9 +128,10 @@ if menu == "Scan Card":
         st.subheader("Detected Text")
         st.text_area("", text, height=150)
 
+        # Extract details
         name = extract_name(text)
         email = extract_email(text)
-        phone = extract_phone(text)
+        phones = extract_phones(text)  # Get ALL phones
         website = extract_website(text)
         occupation = extract_occupation(text)
 
@@ -133,18 +142,33 @@ if menu == "Scan Card":
             st.write(f"💼 Occupation: {occupation}")
         with col2:
             st.write(f"📧 Email: {email}")
-            st.write(f"📞 Phone: {phone}")
             st.write(f"🌐 Website: {website}")
+        
+        # Show phones in list format
+        st.subheader("📞 Phone Numbers")
+        for i, phone in enumerate(phones, 1):
+            st.write(f"**Phone {i}:** {phone}")
 
-        data = {"Name":[name], "Occupation":[occupation], "Email":[email], "Phone":[phone], "Website":[website]}
-        df = pd.DataFrame(data)
-        if os.path.exists(FILE):
-            old = pd.read_excel(FILE)
-            new = pd.concat([old, df], ignore_index=True)
-            new.to_excel(FILE, index=False)
+        # Save ALL phones to Excel (one per row)
+        if phones:
+            for i, phone in enumerate(phones):
+                data = {
+                    "Name": [name],
+                    "Occupation": [occupation],
+                    "Email": [email],
+                    "Phone": [phone],
+                    "Website": [website]
+                }
+                df = pd.DataFrame(data)
+                if os.path.exists(FILE):
+                    old = pd.read_excel(FILE)
+                    new = pd.concat([old, df], ignore_index=True)
+                    new.to_excel(FILE, index=False)
+                else:
+                    df.to_excel(FILE, index=False)
+            st.success(f"✅ Saved {len(phones)} phone number(s) to Excel!")
         else:
-            df.to_excel(FILE, index=False)
-        st.success("✅ Saved to Excel!")
+            st.warning("No valid phone numbers found")
 
 if menu == "View Contacts":
     st.title("Saved Contacts")
