@@ -1,12 +1,10 @@
 import streamlit as st
 import easyocr
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 import pandas as pd
 import re
 import os
 import numpy as np
-import cv2
-import math
 
 st.set_page_config(page_title="AI Business Card Scanner", layout="wide")
 
@@ -35,57 +33,6 @@ OCCUPATION_GROUPS = {
     "🚀 Other": []
 }
 
-def enhance_for_handwriting(image):
-    """🎯 SUPERCHARGED HANDWRITING OCR PREPROCESSING"""
-    # Convert to OpenCV format
-    img_array = np.array(image)
-    img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-    
-    # 1. RESIZE for optimal DPI (300 DPI)
-    height, width = img_cv.shape[:2]
-    if width < 1200:
-        scale = 1200 / width
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        img_cv = cv2.resize(img_cv, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-    
-    # 2. GRAYSCALE
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    
-    # 3. NOISE REDUCTION (Gaussian + Median)
-    denoised = cv2.GaussianBlur(gray, (3, 3), 0)
-    denoised = cv2.medianBlur(denoised, 3)
-    
-    # 4. SHARPENING
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    sharpened = cv2.filter2D(denoised, -1, kernel)
-    
-    # 5. ADAPTIVE THRESHOLDING (BEST FOR HANDWRITING)
-    thresh = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                  cv2.THRESH_BINARY, 11, 2)
-    
-    # 6. MORPHOLOGICAL CLEANUP
-    kernel = np.ones((2,2), np.uint8)
-    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
-    
-    # 7. DESKEW (straighten tilted text)
-    coords = np.column_stack(np.where(cleaned > 0))
-    angle = cv2.minAreaRect(coords)[-1]
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
-    (h, w) = cleaned.shape[:2]
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    deskewed = cv2.warpAffine(cleaned, M, (w, h), flags=cv2.INTER_CUBIC, 
-                             borderMode=cv2.BORDER_REPLICATE)
-    
-    # Convert back to PIL
-    enhanced_img = Image.fromarray(deskewed)
-    return enhanced_img
-
 def categorize_occupation(occupation):
     if not occupation or pd.isna(occupation):
         return "🚀 Other"
@@ -99,6 +46,7 @@ def categorize_occupation(occupation):
 def clean_email(email):
     if not email:
         return ""
+    # Remove markdown links and www from domain
     email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
     email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
     email = re.sub(r'<[^>]+>', '', email)
@@ -107,6 +55,7 @@ def clean_email(email):
 def safe_load_contacts():
     if not os.path.exists(FILE):
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
+    
     try:
         df = pd.read_excel(FILE)
         required_cols = ['Name', 'Occupation', 'Email', 'Phone', 'Website']
@@ -122,19 +71,6 @@ def safe_load_contacts():
     except:
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
-def extract_text(image):
-    # 🎯 DOUBLE OCR: Normal + Handwriting enhanced
-    normal_img = preprocess_image(image)
-    enhanced_img = enhance_for_handwriting(image)
-    
-    # OCR on both versions
-    normal_result = reader.readtext(normal_img, detail=0)
-    enhanced_result = reader.readtext(np.array(enhanced_img), detail=0)
-    
-    # Combine and deduplicate
-    all_text = list(set(normal_result + enhanced_result))
-    return "\n".join(all_text)
-
 def preprocess_image(image):
     image = image.convert("RGB")
     img = np.array(image)
@@ -145,6 +81,20 @@ def preprocess_image(image):
         new_h = int(height * scale)
         img = np.array(Image.fromarray(img).resize((new_w, new_h)))
     return img
+
+def extract_text(image):
+    img = preprocess_image(image)
+    result = reader.readtext(img, detail=0)
+    return "\n".join(result)
+
+def fix_domains(text):
+    # 🎯 MINIMAL domain fixes only - won't break emails
+    patterns = [
+        (r'([a-z]+)(com|org|net|co|in|io|ai|uk|edu)(?=\s|$)', r'\1.\2', re.IGNORECASE),
+    ]
+    for pattern, repl, flags in patterns:
+        text = re.sub(pattern, repl, text, flags=flags)
+    return text
 
 def extract_phones(text):
     pattern = r'\+?[\d\s\-\(\)\.]{8,}'
@@ -166,8 +116,7 @@ def extract_name(text):
     return "Name not found"
 
 def extract_email(text):
-    # Handle markdown links FIRST
-    text = re.sub(r'\[([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\]\([^)]*\)', r'\1', text)
+    # 🎯 STRAIGHTFORWARD EMAIL - NO WEBSITE INTERFERENCE
     pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     matches = re.findall(pattern, text, re.IGNORECASE)
     if matches:
@@ -175,8 +124,10 @@ def extract_email(text):
     return ""
 
 def extract_website(text):
-    # Fix wwwname com → www.name.com
+    # 🎯 SPECIAL WEBSITE FIX for wwwname com
+    # Pattern 1: wwwname com → www.name.com
     text = re.sub(r'(www)([a-zA-Z0-9]+)\s+([a-zA-Z]{2,})', r'\1.\2.\3', text, flags=re.IGNORECASE)
+    # Pattern 2: wwwnamecom → www.name.com  
     text = re.sub(r'(www)([a-zA-Z0-9]+)(com|org|net|co|in|io|ai)', r'\1.\2.\3', text, flags=re.IGNORECASE)
     
     patterns = [
@@ -204,7 +155,7 @@ def extract_occupation(text):
 
 # -------- SCAN CARD --------
 if menu == "Scan Card":
-    st.title("✨ AI Business Card Scanner - Handwriting Optimized")
+    st.title("AI Business Card Scanner")
     option = st.radio("Choose Input Method", ["Upload Image", "Use Camera"])
 
     image = None
@@ -218,16 +169,10 @@ if menu == "Scan Card":
             image = Image.open(cam)
 
     if image is not None:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(image, caption="📸 Original", use_column_width=True)
-        with col2:
-            enhanced = enhance_for_handwriting(image)
-            st.image(enhanced, caption="🧠 Enhanced for Handwriting", use_column_width=True)
-        
+        st.image(image, caption="Business Card", use_column_width=True)
         text = extract_text(image)
-        st.subheader("📄 Detected Text")
-        st.text_area("", text, height=200)
+        st.subheader("Detected Text")
+        st.text_area("", text, height=150)
 
         name = extract_name(text)
         email = extract_email(text)
@@ -263,23 +208,30 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
-# [Keep View Contacts and Raw Data same]
+# [Keep View Contacts and Raw Data sections exactly the same as previous version]
 elif menu == "View Contacts":
     st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
+    
     if not df.empty:
         df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
+        
         st.sidebar.subheader("🔍 Search")
         search_term = st.sidebar.text_input("Search names/emails:")
+        
         st.sidebar.subheader("🏷️ Category Filter")
         categories = sorted(df_unique['Category'].unique())
         selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
         
         filtered_df = df_unique
+        
         if search_term:
-            mask = (df_unique['Name'].str.contains(search_term, case=False, na=False) | 
-                    df_unique['Email'].str.contains(search_term, case=False, na=False))
+            mask = (
+                df_unique['Name'].str.contains(search_term, case=False, na=False) |
+                df_unique['Email'].str.contains(search_term, case=False, na=False)
+            )
             filtered_df = filtered_df[mask]
+        
         if selected_category != "All":
             filtered_df = filtered_df[filtered_df['Category'] == selected_category]
         
@@ -290,6 +242,18 @@ elif menu == "View Contacts":
             st.metric("🔍 Filtered Results", len(filtered_df))
         
         if not filtered_df.empty:
+            cat_counts = filtered_df['Category'].value_counts()
+            st.subheader("📈 Contacts by Category")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                for cat, count in cat_counts.head(6).items():
+                    st.markdown(f"**{cat}**: {count}")
+            with col2:
+                remaining = len(filtered_df) - cat_counts.head(6).sum()
+                if remaining > 0:
+                    st.markdown(f"**Others**: {remaining}")
+            
             for _, row in filtered_df.iterrows():
                 col1, col2 = st.columns([3, 1])
                 with col1:
