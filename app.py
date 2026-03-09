@@ -130,13 +130,61 @@ def extract_phones(text):
             cleaned_phones.append(clean_phone)
     return list(dict.fromkeys(cleaned_phones))
 
-def extract_name(text):
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    for line in lines[:5]:
+ def extract_name(text):
+    lines = [l.strip() for l in text.split("
+") if l.strip() and len(l.strip()) > 1]
+    
+    # Method 1: Look for lines with 2+ capitalized words (most common name pattern)
+    for line in lines[:8]:  # Check first 8 lines
         words = line.split()
-        caps_words = [w for w in words if w and w[0].isupper()]
+        caps_words = [w for w in words if w and w[0].isupper() and len(w) > 1]
+        # If line has 2-4 capitalized words and total length reasonable for name
+        if 2 <= len(caps_words) <= 4 and len(line) <= 50:
+            # Clean up the name
+            name_candidate = " ".join(caps_words[:3])
+            if not any(skip in name_candidate.lower() for skip in ['inc', 'llc', 'corp', 'ltd', 'www', 'com']):
+                return name_candidate
+    
+    # Method 2: Single line with multiple capital letters (John Smith style)
+    for line in lines[:5]:
+        upper_count = sum(1 for c in line if c.isupper())
+        total_letters = sum(1 for c in line if c.isalpha())
+        if total_letters > 0 and upper_count / total_letters >= 0.25 and len(line.split()) >= 2:
+            words = line.split()
+            caps_words = [w for w in words if w[0].isupper()]
+            if len(caps_words) >= 2:
+                return " ".join(caps_words[:3])
+    
+    # Method 3: First line with highest capitalization ratio
+    best_line = None
+    best_ratio = 0
+    
+    for line in lines[:6]:
+        upper_count = sum(1 for c in line if c.isupper())
+        total_letters = sum(1 for c in line if c.isalpha())
+        if total_letters > 5:  # Line must be substantial enough
+            ratio = upper_count / total_letters
+            if ratio > best_ratio and ratio > 0.2:
+                best_ratio = ratio
+                best_line = line
+                if len(line.split()) >= 2:
+                    break
+    
+    if best_line:
+        words = best_line.split()
+        caps_words = [w for w in words if w[0].isupper()]
         if len(caps_words) >= 2:
-            return " ".join(caps_words[:2])
+            return " ".join(caps_words[:3])
+    
+    # Method 4: Longest line in top 3 lines (names are often prominent)
+    top_lines = lines[:3]
+    if top_lines:
+        longest_line = max(top_lines, key=len)
+        words = longest_line.split()
+        caps_words = [w for w in words if w[0].isupper()]
+        if len(caps_words) >= 2:
+            return " ".join(caps_words[:3])
+    
     return "Name not found"
 
 def extract_email(text):
@@ -305,3 +353,4 @@ elif menu == "Raw Data":
         st.dataframe(df, use_container_width=True)
     else:
         st.warning("No data yet")
+
