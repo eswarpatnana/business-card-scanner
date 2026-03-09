@@ -17,25 +17,44 @@ def load_reader():
 
 reader = load_reader()
 
+# -------- EXPANDED OCCUPATION CATEGORIES --------
 OCCUPATION_GROUPS = {
-    "👨‍💼 Management": ["manager", "director", "ceo", "cto", "founder", "president", "vp", "head"],
-    "💻 Engineering": ["engineer", "developer", "software", "devops", "architect", "programmer"],
-    "🎨 Design": ["designer", "ui", "ux", "graphic", "creative"],
-    "📈 Sales & Marketing": ["sales", "marketing", "business development", "account"],
-    "💼 Consulting": ["consultant", "advisor", "analyst"],
-    "🔬 Research": ["scientist", "researcher"],
-    "📱 Other": []
+    "👨‍💼 Management": ["manager", "director", "ceo", "cto", "cfo", "founder", "president", "vp", "head", "executive", "principal"],
+    "💻 Engineering": ["engineer", "developer", "software", "devops", "architect", "programmer", "backend", "frontend", "fullstack", "data engineer"],
+    "🎨 Design": ["designer", "ui", "ux", "graphic", "creative", "product designer", "visual"],
+    "📈 Sales & Marketing": ["sales", "marketing", "business development", "account", "digital marketing", "growth"],
+    "💼 Consulting": ["consultant", "advisor", "analyst", "strategy", "management consultant"],
+    "🔬 Research": ["scientist", "researcher", "analyst", "data scientist"],
+    "🏥 Healthcare": ["doctor", "nurse", "physician", "dentist", "surgeon"],
+    "📱 Product": ["product manager", "pm", "product owner"],
+    "🎓 Education": ["teacher", "professor", "trainer", "coach"],
+    "⚖️ Legal": ["lawyer", "attorney", "legal"],
+    "🏦 Finance": ["accountant", "finance", "banker", "investor"],
+    "📊 Operations": ["operations", "hr", "human resources", "admin"],
+    "🚀 Other": []
 }
 
 def categorize_occupation(occupation):
     if not occupation or pd.isna(occupation):
-        return "📱 Other"
+        return "🚀 Other"
     occ_lower = str(occupation).lower()
     for category, keywords in OCCUPATION_GROUPS.items():
         for keyword in keywords:
             if keyword in occ_lower:
                 return category
-    return "📱 Other"
+    return "🚀 Other"
+
+def clean_email(email):
+    """Fix www.email.com → email.com"""
+    if not email:
+        return ""
+    # Remove www. from email domains
+    email = re.sub(r'www\.([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', r'\1', email)
+    # Remove markdown links [email](url)
+    email = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', email)
+    # Strip hyperlinks
+    email = re.sub(r'<[^>]+>', '', email)
+    return email.strip()
 
 def safe_load_contacts():
     if not os.path.exists(FILE):
@@ -49,12 +68,15 @@ def safe_load_contacts():
                 df[col] = ""
         if 'Category' not in df.columns:
             df['Category'] = df['Occupation'].apply(categorize_occupation)
+        # Clean existing emails
+        if 'Email' in df.columns:
+            df['Email'] = df['Email'].astype(str).apply(clean_email)
         df = df.dropna(subset=['Name'])
         return df
     except:
-        st.error("❌ Corrupted file. Starting fresh.")
         return pd.DataFrame(columns=['Name', 'Occupation', 'Category', 'Email', 'Phone', 'Website'])
 
+# [All other extract functions remain same]
 def preprocess_image(image):
     image = image.convert("RGB")
     img = np.array(image)
@@ -103,11 +125,14 @@ def extract_name(text):
 def extract_email(text):
     text = fix_domains(text)
     matches = re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
-    return matches[0] if matches else ""
+    if matches:
+        clean_email_match = clean_email(matches[0])
+        return clean_email_match
+    return ""
 
 def extract_website(text):
     text = fix_domains(text)
-    match = re.findall(r'(?:www\.)?([A-Za-z0-9-]+\.(?:com|org|net|co|in|io|ai))', text)
+    match = re.findall(r'(?:www\.)?([a-zA-Z0-9-]+\.(?:com|org|net|co|in|io|ai))', text)
     if match:
         site = match[0]
         if not site.startswith("www"):
@@ -116,7 +141,7 @@ def extract_website(text):
     return ""
 
 def extract_occupation(text):
-    keywords = ["manager","consultant","engineer","developer","designer","director","founder","marketing","sales","ceo","analyst"]
+    keywords = sum(OCCUPATION_GROUPS.values(), [])  # All keywords
     for line in text.split("\n"):
         for key in keywords:
             if key in line.lower():
@@ -145,7 +170,7 @@ if menu == "Scan Card":
         st.text_area("", text, height=150)
 
         name = extract_name(text)
-        email = extract_email(text)
+        email = extract_email(text)  # Now cleaned!
         phones = extract_phones(text)
         website = extract_website(text)
         raw_occupation = extract_occupation(text)
@@ -157,7 +182,7 @@ if menu == "Scan Card":
             st.write(f"💼 {raw_occupation}")
             st.info(f"🏷️ {category}")
         with col2:
-            st.write(f"📧 {email}")
+            st.markdown(f"📧 **{email}**")  # Clean email display
             st.write(f"🌐 {website}")
 
         st.subheader("📞 Phones")
@@ -178,39 +203,74 @@ if menu == "Scan Card":
             else:
                 st.info(f"ℹ️ **{name}** exists!")
 
-# -------- VIEW CONTACTS --------
+# -------- VIEW CONTACTS WITH SEARCH --------
 elif menu == "View Contacts":
-    st.title("🎯 Contacts by Occupation")
+    st.title("🎯 Contacts Dashboard")
     df = safe_load_contacts()
     
     if not df.empty:
         df_unique = df.drop_duplicates(subset=['Name', 'Email'], keep='first')
         
-        st.sidebar.subheader("🔍 Filter")
-        categories = sorted(df_unique['Category'].unique().tolist())
-        selected_category = st.sidebar.selectbox("Category:", ["All"] + categories)
+        # 🎯 TWO-WAY FILTERING
+        col1, col2 = st.columns(2)
+        with col1:
+            st.sidebar.subheader("🔍 Search")
+            search_term = st.sidebar.text_input("Search names/emails:")
+            
+            st.sidebar.subheader("🏷️ Category Filter")
+            categories = sorted(df_unique['Category'].unique())
+            selected_category = st.sidebar.selectbox("Category:", ["All"] + list(categories))
         
-        if selected_category == "All":
-            st.dataframe(df_unique, use_container_width=True)
-            st.success(f"📊 {len(df_unique)} unique contacts")
+        # Filter data
+        filtered_df = df_unique
+        
+        if search_term:
+            mask = (
+                df_unique['Name'].str.contains(search_term, case=False, na=False) |
+                df_unique['Email'].str.contains(search_term, case=False, na=False)
+            )
+            filtered_df = filtered_df[mask]
+        
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df['Category'] == selected_category]
+        
+        # Stats
+        col_stats1, col_stats2 = st.columns(2)
+        with col_stats1:
+            st.metric("📊 Total Contacts", len(df_unique))
+        with col_stats2:
+            st.metric("🔍 Filtered Results", len(filtered_df))
+        
+        if not filtered_df.empty:
+            # Category breakdown
+            cat_counts = filtered_df['Category'].value_counts()
+            st.subheader("📈 Contacts by Category")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                for cat, count in cat_counts.head(6).items():
+                    st.markdown(f"**{cat}**: {count}")
+            with col2:
+                remaining = len(filtered_df) - cat_counts.head(6).sum()
+                if remaining > 0:
+                    st.markdown(f"**Others**: {remaining}")
+            
+            # Contact cards
+            for _, row in filtered_df.iterrows():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**👤 {row['Name']}**")
+                    st.caption(f"💼 {row['Occupation']} | 🏷️ {row['Category']}")
+                    st.caption(f"📧 {row['Email']}")
+                with col2:
+                    phones_count = len(str(row['Phone']).split(', '))
+                    st.caption(f"📞 **{phones_count}** phones")
+                st.markdown("─" * 50)
         else:
-            filtered = df_unique[df_unique['Category'] == selected_category]
-            if not filtered.empty:
-                st.success(f"👥 {len(filtered)} {selected_category} contacts")
-                for _, row in filtered.iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"**👤 {row['Name']}** - {row['Occupation']}")
-                        st.caption(f"📧 {row['Email']}")
-                    with col2:
-                        st.caption(f"📞 {len(str(row['Phone']).split(', '))} phones")
-                    st.markdown("─" * 50)
-            else:
-                st.info("No contacts found")
+            st.info("🔍 No matches found")
     else:
         st.warning("👆 Scan some cards first!")
 
-# -------- RAW DATA --------
 elif menu == "Raw Data":
     st.title("📋 Raw Data")
     df = safe_load_contacts()
