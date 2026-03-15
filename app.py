@@ -1,11 +1,11 @@
 import streamlit as st
 import easyocr
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps
 import pandas as pd
-import numpy as np
-import cv2
 import re
 import os
+import numpy as np
+import cv2
 from io import BytesIO
 from datetime import datetime
 
@@ -15,7 +15,7 @@ DATA_FILE = "contacts.xlsx"
 
 COLUMNS = [
 "Name","Designation","Company","Email","Phones",
-"Website","Address","OCR_Text","Created_At"
+"Website","LinkedIn","Address","OCR_Text","Source","Created_At"
 ]
 
 EMAIL_REGEX = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+.[A-Za-z]{2,}")
@@ -23,13 +23,15 @@ PHONE_REGEX = re.compile(r"(?:+?\d[\d\s().-]{7,}\d)")
 WEB_REGEX = re.compile(r"(?:https?://)?(?:www.)?[A-Za-z0-9.-]+.[A-Za-z]{2,}",re.I)
 
 TITLE_HINTS = [
-"engineer","developer","manager","director","founder",
-"designer","consultant","analyst","marketing","sales"
+"engineer","developer","manager","director","founder","ceo","cto",
+"designer","consultant","analyst","marketing","sales","architect"
 ]
 
 ADDRESS_HINTS = [
-"street","road","avenue","sector","suite","building","city"
+"street","road","avenue","sector","suite","building","city","zip"
 ]
+
+# ---------------- OCR ----------------
 
 @st.cache_resource
 def load_reader():
@@ -37,9 +39,9 @@ return easyocr.Reader(['en'],gpu=False)
 
 reader = load_reader()
 
-# ---------------- IMAGE PREPROCESS METHODS ----------------
+# ---------------- IMAGE PREPROCESS ----------------
 
-def preprocess_methods(image):
+def preprocess_image(image):
 
 ```
 image = ImageOps.exif_transpose(image).convert("RGB")
@@ -47,80 +49,63 @@ img = np.array(image)
 
 gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-# method1 normal gray
-m1 = gray
+blur = cv2.GaussianBlur(gray,(3,3),0)
 
-# method2 threshold
-m2 = cv2.adaptiveThreshold(
-    gray,255,
+thresh = cv2.adaptiveThreshold(
+    blur,255,
     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
     cv2.THRESH_BINARY,11,2
 )
 
-# method3 sharpen
-kernel = np.array([
-    [-1,-1,-1],
-    [-1,9,-1],
-    [-1,-1,-1]
-])
-m3 = cv2.filter2D(gray,-1,kernel)
-
-# method4 contrast boost
-pil = Image.fromarray(gray)
-pil = ImageEnhance.Contrast(pil).enhance(1.8)
-m4 = np.array(pil)
-
-return [m1,m2,m3,m4]
+return thresh
 ```
 
-# ---------------- MULTI PASS OCR ----------------
+# ---------------- LAYOUT OCR ----------------
 
-def run_best_ocr(image):
+def run_layout_ocr(image):
 
 ```
-methods = preprocess_methods(image)
+results = reader.readtext(image)
 
-best_text=""
-best_conf=0
+data=[]
 
-for img in methods:
+for box,text,conf in results:
 
-    try:
+    x = int(box[0][0])
+    y = int(box[0][1])
 
-        result = reader.readtext(img)
+    data.append({
+    "text":text,
+    "x":x,
+    "y":y,
+    "conf":conf
+    })
 
-        texts=[]
-        confs=[]
+df=pd.DataFrame(data)
 
-        for box,text,conf in result:
+if not df.empty:
+    df=df.sort_values(by=["y","x"])
 
-            texts.append(text)
-            confs.append(conf)
-
-        if not texts:
-            continue
-
-        text="\n".join(texts)
-
-        confidence=sum(confs)/len(confs)
-
-        if confidence>best_conf:
-
-            best_conf=confidence
-            best_text=text
-
-    except:
-        pass
-
-return best_text,best_conf
+return df
 ```
 
-# ---------------- DETECTION ----------------
+# ---------------- TEXT HELPERS ----------------
+
+def normalize_text(lines):
+
+```
+lines=[re.sub(r"\s+"," ",l).strip() for l in lines if l.strip()]
+
+return "\n".join(lines)
+```
+
+# ---------------- DETECTORS ----------------
 
 def detect_email(text):
 
 ```
 m=EMAIL_REGEX.findall(text)
+
 return m[0] if m else ""
 ```
 
@@ -145,25 +130,39 @@ def detect_website(text):
 m=WEB_REGEX.findall(text)
 
 if m:
+
     site=m[0]
+
     if not site.startswith("http"):
         site="https://"+site
+
     return site
 
 return ""
 ```
 
-def detect_name(lines):
+# ---------------- LAYOUT NAME DETECTION ----------------
+
+def detect_name(layout_df):
 
 ```
-for l in lines[:6]:
+if layout_df.empty:
+    return "Unknown"
 
-    if 2<=len(l.split())<=4 and not re.search(r"\d",l):
+top_area = layout_df[layout_df["y"] < layout_df["y"].median()]
 
-        return l
+for _,row in top_area.iterrows():
+
+    line=row["text"]
+
+    if 2<=len(line.split())<=4 and not re.search(r"\d",line):
+
+        return line
 
 return "Unknown"
 ```
+
+# ---------------- DESIGNATION ----------------
 
 def detect_designation(lines):
 
@@ -175,47 +174,64 @@ for l in lines:
     for t in TITLE_HINTS:
 
         if t in low:
+
             return l
 
 return ""
 ```
 
-def detect_company(lines,name):
+# ---------------- COMPANY ----------------
+
+def detect_company(layout_df,name):
 
 ```
-for l in lines:
+if layout_df.empty:
+    return ""
 
-    if l!=name and l.isupper() and len(l.split())<=5:
-        return l
+for _,row in layout_df.iterrows():
+
+    text=row["text"]
+
+    if text!=name and len(text.split())<=5:
+
+        if text.isupper():
+
+            return text
 
 return ""
 ```
+
+# ---------------- ADDRESS ----------------
 
 def detect_address(lines):
 
 ```
 for l in lines:
 
-    for a in ADDRESS_HINTS:
+    if any(a in l.lower() for a in ADDRESS_HINTS):
 
-        if a in l.lower():
-            return l
+        return l
 
 return ""
 ```
 
-# ---------------- PARSER ----------------
+# ---------------- LLM STYLE PARSER ----------------
 
-def parse_contact(text):
+def smart_parse(layout_df):
 
 ```
-lines=[re.sub(r"\s+"," ",l).strip() for l in text.split("\n") if l.strip()]
+if layout_df.empty:
+    return {}
 
-name=detect_name(lines)
+lines=layout_df["text"].tolist()
+
+text="\n".join(lines)
+
+name=detect_name(layout_df)
 
 designation=detect_designation(lines)
 
-company=detect_company(lines,name)
+company=detect_company(layout_df,name)
 
 email=detect_email(text)
 
@@ -226,14 +242,55 @@ website=detect_website(text)
 address=detect_address(lines)
 
 return {
-    "Name":name,
-    "Designation":designation,
-    "Company":company,
-    "Email":email,
-    "Phones":", ".join(phones),
-    "Website":website,
-    "Address":address
+"Name":name,
+"Designation":designation,
+"Company":company,
+"Email":email,
+"Phones":", ".join(phones),
+"Website":website,
+"Address":address
 }
+```
+
+# ---------------- OCR PIPELINE ----------------
+
+def extract_text_from_bytes(file_bytes):
+
+```
+image = Image.open(BytesIO(file_bytes))
+
+processed = preprocess_image(image)
+
+best_df=None
+best_score=-1
+
+for angle in (0,90,180,270):
+
+    rotated=np.rot90(processed,angle//90)
+
+    try:
+
+        df=run_layout_ocr(rotated)
+
+        text="\n".join(df["text"].tolist())
+
+        score=len(text)
+
+        if detect_email(text):
+            score+=50
+
+        if detect_phones(text):
+            score+=40
+
+        if score>best_score:
+
+            best_score=score
+            best_df=df
+
+    except:
+        pass
+
+return best_df,image
 ```
 
 # ---------------- DATABASE ----------------
@@ -286,19 +343,24 @@ if files:
 
         bytes=f.getvalue()
 
-        image = Image.open(BytesIO(bytes))
+        layout_df,image=extract_text_from_bytes(bytes)
 
         st.image(image,use_container_width=True)
 
-        with st.spinner("Running multi-pass OCR..."):
+        if layout_df is None or layout_df.empty:
 
-            text,conf = run_best_ocr(image)
+            st.warning("No text detected")
+            continue
 
-        st.success(f"OCR Confidence Score: {round(conf,2)}")
+        parsed=smart_parse(layout_df)
 
-        st.text_area("Detected Text",text,height=200)
+        st.subheader("Detected Text")
 
-        parsed=parse_contact(text)
+        st.text_area(
+        "OCR Output",
+        normalize_text(layout_df["text"].tolist()),
+        height=200
+        )
 
         for k,v in parsed.items():
 
@@ -320,7 +382,7 @@ df=load_contacts()
 
 if df.empty:
 
-    st.warning("No contacts yet")
+    st.warning("No contacts saved yet")
 
 else:
 
